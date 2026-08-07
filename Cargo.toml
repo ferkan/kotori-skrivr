@@ -1,0 +1,249 @@
+[package]
+name = "kotori-skrivr"
+version = "0.3.0"
+edition = "2021"
+rust-version = "1.92"
+description = "A fast, lightweight Markdown editor with live inline WYSIWYG editing. Fork of Ferrite by OlaProeis."
+license = "MIT"
+authors = ["Kotori"]
+keywords = ["markdown", "editor", "text-editor", "egui"]
+categories = ["text-editors", "gui"]
+
+[[bin]]
+name = "skrivr"
+path = "src/main.rs"
+
+[features]
+default = ["bundle-icon", "high-perf-alloc"]
+# Bundle application icon in the binary (requires assets/icons/icon_256.png to exist)
+bundle-icon = []
+# Use high-performance memory allocators (mimalloc on Windows, jemalloc on Unix)
+# This reduces heap fragmentation and memory usage, especially for long-running sessions.
+# Disable with: cargo build --no-default-features --features bundle-icon
+high-perf-alloc = ["mimalloc", "tikv-jemallocator"]
+# Async worker infrastructure for background operations (AI, SSH, database)
+async-workers = ["tokio", "poll-promise"]
+# Language Server Protocol integration (diagnostics, hover, go-to-def).
+# Deferred from v0.2.8 — will ship in v0.2.9 with proper diagnostics panel.
+lsp = []
+
+[dependencies]
+egui = { version = "0.34", features = ["serde"] }
+egui-phosphor = "0.12.0"
+# Glow renderer: avoids wgpu-hal 29 / gpu-allocator Windows `windows` crate duplication on MSVC.
+# Revisit wgpu default once upstream aligns (egui 0.34 ecosystem).
+eframe = { version = "0.34", default-features = false, features = [
+    "accesskit",
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+] }
+comrak = "0.22"
+syntect = "5.1"
+two-face = "0.5"  # Extra syntax definitions (PowerShell, TypeScript, etc.)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+toml = "0.8"
+dirs = "5"
+open = "5"
+url = "2"
+rfd = "0.14"
+log = "0.4"
+env_logger = "0.11"
+regex = "1"
+arboard = "3"
+clap = { version = "4", features = ["derive"] }
+# Workspace support
+# File system watcher - use default features for proper platform backends:
+# - Linux: inotify (fast, event-based)
+# - macOS: fsevent (default) or kqueue
+# - Windows: ReadDirectoryChangesW
+# Note: Previously had default-features = false which forced polling backend on Linux,
+# causing 10+ second freezes when opening folders.
+notify = "6"
+fuzzy-matcher = "0.3"
+walkdir = "2"
+
+# Git integration (no SSH/HTTPS - we only need local repo status)
+git2 = { version = "0.19", default-features = false }
+
+# Icon loading + markdown image rendering (PNG, JPEG, GIF, WebP, BMP)
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+font-kit = "0.14.3"
+
+# Internationalization
+rust-i18n = "3"
+sys-locale = "0.3"
+
+# Hashing for Mermaid diagram caching
+blake3 = "1.5"
+
+# CSV parsing for table viewer
+csv = "1.3"
+
+# Color palette generation for rainbow column coloring
+palette = "0.7"
+
+# Slug generation for Table of Contents anchors
+slug = "0.1"
+
+# Date/time formatting for snippets
+chrono = "0.4"
+
+# Rope data structure for efficient large text editing
+ropey = "1.6"
+
+# Character encoding detection and conversion
+encoding_rs = "0.8"
+chardetng = "0.1"
+
+# Terminal emulation
+portable-pty = "0.8"
+vte = "0.13"
+ctrlc = "3.5.1"
+
+# HTTP client for update checking (lightweight, blocking)
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+
+# Async runtime for background workers (optional, feature-gated)
+tokio = { version = "1.49", features = ["rt-multi-thread", "macros", "sync", "time"], optional = true }
+poll-promise = { version = "0.3", optional = true }
+# HarfBuzz shaping in pure Rust — pin exact version (newer crate; see docs/technical/editor/harfrust-text-shaping.md)
+harfrust = "0.5.2"
+unicode-script = "0.5"
+unicode-segmentation = "1.11"
+unicode-width = "0.1"
+
+# PDF rendering (pure Rust, CPU-based)
+hayro = "0.5"
+
+# PDF generation (pure Rust, same author as hayro)
+# See docs/technical/planning/pdf-export-pipeline.md for the design rationale.
+# `simple-text` enables surface.draw_text(); `raster-images` enables PNG/JPEG embedding.
+krilla = { version = "0.7", features = ["simple-text", "raster-images"] }
+krilla-svg = "0.7"
+
+# High-performance memory allocators (platform-specific)
+# mimalloc for Windows: faster allocation, reduced fragmentation
+# jemalloc for Unix: mature, well-tested, reduces memory usage
+[target.'cfg(windows)'.dependencies]
+mimalloc = { version = "0.1", default-features = false, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+tikv-jemallocator = { version = "0.6", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+# Windows icon embedding
+embed-resource = "2.4"
+
+# Release build optimizations
+# Note: We avoid aggressive size optimization and symbol stripping to reduce
+# false positive detections by antivirus software (particularly Windows Defender's
+# ML-based heuristics). See README.md "Antivirus False Positives" section.
+[profile.release]
+lto = "thin"          # Link-time optimization (thin is faster, less aggressive)
+codegen-units = 1     # Single codegen unit for better optimization
+panic = "abort"       # No unwinding, smaller binary
+opt-level = 3         # Optimize for speed (not size - "z" can trigger AV heuristics)
+# strip = "symbols"   # DISABLED: Stripping symbols can trigger AV false positives
+
+# Development profile with some optimizations for faster testing
+[profile.dev.package."*"]
+opt-level = 2         # Optimize dependencies in dev builds
+
+# ============================================================================
+# Linux .deb package configuration (cargo-deb)
+# Build with: cargo deb
+# ============================================================================
+[package.metadata.deb]
+name = "kotori-skrivr"
+maintainer = "Kotori <fredrik.stahre@kotori.se>"
+copyright = "2024-2026 OlaProeis; 2026 Kotori"
+license-file = ["LICENSE", "0"]
+extended-description = """Kotori Skrivr is a fast, lightweight text editor built with Rust and egui.
+Features include:
+- Markdown editing with live preview
+- Split view (raw + rendered side-by-side)
+- JSON/YAML/TOML tree viewer
+- MermaidJS diagram rendering
+- Git integration with file status indicators
+- Syntax highlighting for code blocks
+- Zen mode for distraction-free writing
+- Session persistence and auto-save"""
+section = "editors"
+priority = "optional"
+depends = "$auto"
+assets = [
+    # Binary
+    ["target/release/skrivr", "usr/bin/skrivr", "755"],
+    # Desktop entry
+    ["assets/icons/linux/skrivr.desktop", "usr/share/applications/skrivr.desktop", "644"],
+    # Icons at various sizes
+    ["assets/icons/icon_16.png", "usr/share/icons/hicolor/16x16/apps/skrivr.png", "644"],
+    ["assets/icons/icon_32.png", "usr/share/icons/hicolor/32x32/apps/skrivr.png", "644"],
+    ["assets/icons/icon_48.png", "usr/share/icons/hicolor/48x48/apps/skrivr.png", "644"],
+    ["assets/icons/icon_64.png", "usr/share/icons/hicolor/64x64/apps/skrivr.png", "644"],
+    ["assets/icons/icon_128.png", "usr/share/icons/hicolor/128x128/apps/skrivr.png", "644"],
+    ["assets/icons/icon_256.png", "usr/share/icons/hicolor/256x256/apps/skrivr.png", "644"],
+    ["assets/icons/icon_512.png", "usr/share/icons/hicolor/512x512/apps/skrivr.png", "644"],
+    # Documentation
+    ["README.md", "usr/share/doc/kotori-skrivr/README.md", "644"],
+    ["LICENSE", "usr/share/doc/kotori-skrivr/LICENSE", "644"],
+]
+
+# ============================================================================
+# Linux .rpm package configuration (cargo-generate-rpm)
+# Build with: cargo generate-rpm
+# ============================================================================
+[package.metadata.generate-rpm]
+name = "kotori-skrivr"
+license = "MIT"
+summary = "A fast, lightweight text editor for Markdown, JSON, and more"
+assets = [
+    # Binary
+    { source = "target/release/skrivr", dest = "/usr/bin/skrivr", mode = "755" },
+    # Desktop entry
+    { source = "assets/icons/linux/skrivr.desktop", dest = "/usr/share/applications/skrivr.desktop", mode = "644" },
+    # Icons at various sizes
+    { source = "assets/icons/icon_16.png", dest = "/usr/share/icons/hicolor/16x16/apps/skrivr.png", mode = "644" },
+    { source = "assets/icons/icon_32.png", dest = "/usr/share/icons/hicolor/32x32/apps/skrivr.png", mode = "644" },
+    { source = "assets/icons/icon_48.png", dest = "/usr/share/icons/hicolor/48x48/apps/skrivr.png", mode = "644" },
+    { source = "assets/icons/icon_64.png", dest = "/usr/share/icons/hicolor/64x64/apps/skrivr.png", mode = "644" },
+    { source = "assets/icons/icon_128.png", dest = "/usr/share/icons/hicolor/128x128/apps/skrivr.png", mode = "644" },
+    { source = "assets/icons/icon_256.png", dest = "/usr/share/icons/hicolor/256x256/apps/skrivr.png", mode = "644" },
+    { source = "assets/icons/icon_512.png", dest = "/usr/share/icons/hicolor/512x512/apps/skrivr.png", mode = "644" },
+    # Documentation
+    { source = "README.md", dest = "/usr/share/doc/kotori-skrivr/README.md", mode = "644", doc = true },
+    { source = "LICENSE", dest = "/usr/share/doc/kotori-skrivr/LICENSE", mode = "644", doc = true },
+]
+
+# ============================================================================
+# Windows .msi installer configuration (cargo-wix)
+# Build with: cargo wix
+# ============================================================================
+[package.metadata.wix]
+name = "Kotori Skrivr"
+manufacturer = "Kotori"
+product-icon = "assets/icons/windows/app.ico"
+license = false
+eula = false
+
+# ============================================================================
+# macOS .app bundle configuration (cargo-bundle)
+# Build with: cargo bundle --release
+# ============================================================================
+[package.metadata.bundle]
+name = "Kotori Skrivr"
+identifier = "se.kotori.skrivr"
+icon = ["assets/icons/macos/Skrivr.icns"]
+short_description = "A fast, lightweight text editor"
+long_description = """Kotori Skrivr is a fast, lightweight text editor built with Rust and egui.
+Features include Markdown editing with live preview, JSON/YAML/TOML tree viewer,
+Git integration, and syntax highlighting."""
+category = "public.app-category.developer-tools"
+osx_info_plist_exts = ["assets/macos/info_plist_ext.xml"]

@@ -1,0 +1,281 @@
+# Kotori Skrivr - Norwegian Bokmål (Norsk bokmål)
+# This file contains all user-facing strings for internationalization.
+# Naming convention: category.subcategory.key (e.g., menu.file.open)
+
+# Application metadata
+app:
+  name: "Kotori Skrivr"
+
+# Menu bar items
+menu:
+  file:
+    label: "Fil"
+    open: "Åpne…"
+    save: "Lagre"
+    save_as: "Lagre som…"
+    recent: "Nylige filer"
+    export: "Eksporter"
+    export_html: "Eksporter til HTML..."
+    export_clipboard: "Kopier som HTML"
+  edit:
+    label: "Rediger"
+  format:
+    label: "Format"
+  tools:
+    label: "Verktøy"
+
+# Toolbar buttons
+
+# View mode labels
+view_mode:
+  label_raw: "Rå"
+  label_rendered: "Gjengitt"
+  label_split: "Delt"
+  label_live: "Live"
+  raw_desc: "Ren Markdown-tekstredigering"
+  rendered_desc: "WYSIWYG-gjengitt redigering"
+  split_desc: "Råredigering + gjengitt forhåndsvisning side ved side"
+
+# Status bar
+status:
+  untitled: "Uten navn"
+  no_file: "Ingen fil åpen"
+
+# File dialogs
+dialog:
+  unsaved_changes:
+    title: "Ulagrede endringer"
+    save: "Lagre"
+    dont_save: "Ikke lagre"
+  confirm:
+    cancel: "Avbryt"
+    close: "Lukk"
+  rename_untitled_tab:
+    title: "Gi fanen navn"
+    hint: "Kun visningsnavn (ikke filbane). Bruk «Lagre som» for å skrive til disk."
+    apply: "Bruk"
+  # File operation dialogs
+  file:
+    new_file: "Ny fil"
+    new_folder: "Ny mappe"
+    enter_file_name: "Skriv inn filnavn:"
+    enter_folder_name: "Skriv inn mappenavn:"
+    hint_file: "filnavn.md"
+    hint_folder: "mappe-navn"
+    create: "Opprett"
+    rename: "Gi nytt navn"
+    enter_new_name: "Skriv inn nytt navn:"
+    exists_error: "En fil eller mappe med dette navnet finnes allerede"
+    confirm_delete: "Bekreft sletting"
+    delete_folder_warning: "⚠ Dette vil slette mappen og alt innholdet!"
+    delete: "Slett"
+    file: "fil"
+    folder: "mappe"
+    location: "Plassering: %{path}"
+    delete_confirm: "Er du sikker på at du vil slette denne %{item_type}?"
+  # Go to Line dialog
+  go_to_line:
+    title: "Gå til linje"
+    enter_line: "Skriv inn linjenummer:"
+    go: "Gå"
+    range: "Område: 1-%{max}"
+
+# Settings panel
+settings:
+  title: "Innstillinger"
+  reset_all: "Tilbakestill alt"
+  reset_tooltip: "Tilbakestill alle innstillinger til standard"
+  auto_save_hint: "Innstillinger lagres automatisk"
+  default_view_hint: "Visningsmodus for nye faner (eksisterende faner beholder sin
+    lagrede visningsmodus)"
+  font_size:
+    small: "Liten"
+    medium: "Medium"
+    large: "Stor"
+  general:
+    theme: "Tema"
+    theme_dark: "Mørk"
+    theme_light: "Lys"
+    theme_system: "System"
+    restore_session: "Gjenopprett forrige økt ved oppstart"
+  files:
+    title: "Filer"
+    restore_session_tooltip: "Når aktivert, gjenopprettes åpne faner ved oppstart. Når deaktivert, startes med én tom fane. Øktdata lagres alltid."
+    quick_note_workflow: "Hurtignotat (midlertidige faner uten fil)"
+    quick_note_workflow_tooltip: "Faner uten fil stenges uten lagre-dialog; ulagrede nye faner blokkerer ikke avslutning. Tekst lagres fortsatt i øktgjenoppretting når gjenoppretting er på."
+    quick_note_workflow_hint: "Dobbeltklikk en uten-navn-fane for visningsnavn. Skru av for vanlig lagre-bekreftelse."
+  editor:
+    title: "Redigerer"
+    font_family: "Skrifttype"
+    font_size: "Skrift Størrelse"
+    font_inter_desc: "Moderne, ren proporsjonal skrift"
+    font_jetbrains_desc: "Monospace-skrift for kode"
+    custom_font: "Egendefinert systemskrift"
+    custom_font_desc: "Velg blant installerte systemskrifter"
+    select_system_font: "Velg skrift:"
+    custom_font_pick_placeholder: "Velg en skrift …"
+    font_preview: "Forhåndsvis:"
+    font_not_found: "⚠ Skrift ikke funnet på systemet"
+    cjk_preference: "CJK regionalt valg"
+    cjk_preference_hint: "Velg hvilken CJK-skrift som skal ha prioritet for regionale
+      tegnvarianter"
+    cjk_auto: "Automatisk (systemspråk)"
+    cjk_auto_desc: "Bruk systemspråk for å bestemme prioritet for CJK-skrifter"
+    cjk_korean: "Koreansk (한국어)"
+    cjk_korean_desc: "Prioriter koreanske tegnvarianter"
+    minimap_mode_auto: "Auto"
+    minimap_mode_pixel: "Pixel"
+    # CJK Paragraph Indentation
+
+# Find and Replace panel
+
+# Outline panel
+
+# Document statistics
+stats:
+  headings_total: "Overskrifter"
+  list_items: "Listeelementer"
+  horizontal_rules: "Vannrette linjer"
+  media_links: "Media og lenker"
+  links: "Lenker"
+  images: "Bilder"
+  code_diagrams: "Kode & Diagrammer"
+  code_blocks: "Kode blokker"
+  mermaid_diagrams: "Mermaid diagrammer"
+  tables: "Tabeller"
+  blockquotes: "Sitatblokker"
+
+# File tree / Sidebar
+
+# Quick switcher
+quick_switcher:
+  placeholder: "Søk i filer..."
+  no_results: "Ingen filer som passer"
+  recent_tooltip: "Nylig åpnet"
+  keyboard_hints: "↑↓ Naviger  ⏎ Åpne  Esc Lukk"
+
+# Search in files
+search:
+  title: "Søk i filer"
+  label: "Søk:"
+  placeholder: "Skriv inn søketekst..."
+  more_matches: "    ... flere treff vises ikke"
+  keyboard_hints: "Trykk Enter for søk • Klikk for å åpne • Esc for å lukke"
+
+# About dialog
+about:
+  title: "Om / Hjelp"
+  tab:
+    about: "Om"
+    shortcuts: "Snarveier"
+    mermaid: "Mermaid"
+  description: "En rask og enkel tekstredigerer for Markdown, JSON og mer."
+  close_hint: "Trykk F1 eller Escape for å lukke"
+  # Links section
+  links: "Lenker"
+  github_label: "GitHub:"
+  view_on_github: "Vis på GitHub"
+  github_tooltip: "Åpne depot i nettleser"
+  report_issue_label: "Rapporter problem:"
+  submit_bug: "Send inn feilrapport"
+  issue_tooltip: "Åpne feilsporing i nettleser"
+  # Built with section
+  built_with: "Bygget med"
+  lib:
+    egui: "Immediate mode GUI-rammeverk"
+    comrak: "GitHub-tilpasset Markdown parser"
+    syntect: "Syntaksutheving"
+    serde: "Serialiseringsrammeverk"
+    notify: "Filsystemovervåker"
+  # License section
+  license: "Lisens"
+  license_type: "MIT-lisens"
+  copyright: "© 2026 Kotori Skrivr-bidragsytere"
+  version: "Versjon %{version}"
+
+# Keyboard shortcuts
+shortcuts:
+  title: "Tastatursnarveier"
+  expand_hint: "Klikk på en kategori for å utvide/skjule"
+  # Categories
+  category:
+    file: "Fil"
+    edit: "Rediger"
+    view: "Vis"
+    formatting: "Formatering"
+  # Command names (used in keyboard settings panel)
+    # File operations
+    # Navigation
+    # View
+    # Edit
+    # Search
+    # Formatting
+    # Folding
+    # Other
+  # File shortcuts (for help panel)
+  # Edit shortcuts (for help panel)
+  # View shortcuts (for help panel)
+  # Formatting shortcuts (for help panel)
+  # Workspace shortcuts (for help panel)
+  # Navigation shortcuts (for help panel)
+
+# Error messages
+
+# Notifications / Toasts
+
+# Tree viewer (JSON/YAML/TOML)
+
+# Git integration
+
+# Accessibility
+
+# Recovery and session dialogs
+
+# Common buttons and actions
+
+# Code blocks and widgets
+
+# CSV Viewer
+
+# Pipeline panel
+
+# Encoding
+
+# Tab context menu
+
+# Mermaid diagrams
+
+# Table of Contents
+
+# Formatting toolbar tooltips
+
+# Workspace
+
+# Zen mode
+
+# Log levels (for settings)
+
+# Drag and drop
+
+# Time relative strings
+
+# Tooltips
+
+# Ribbon toolbar additions
+
+# NOTE: New keys were added to notification, status, outline, and widgets sections in en.yaml (v0.2.7).
+# These keys will fall back to English until translated. Check en.yaml for reference.
+
+# Welcome page (first launch)
+
+# Terminal panel
+
+# Productivity panel
+
+# Echo/AI placeholder (development)
+
+# Title bar
+
+# Error dialogs
+
+# File dialog titles and filters
