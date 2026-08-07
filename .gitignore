@@ -49,9 +49,11 @@ desktop.ini
 .rules
 opencode.json
 AGENT.md
-AGENTS.md
 CLAUDE.md
 GEMINI.md
+# AGENTS.md is deliberately NOT ignored: it documents this project's
+# architecture, build and conventions, and belongs in the repository.
+# The others are per-user assistant instructions and stay local.
 .clinerules/
 .gemini/
 .kilo/
@@ -118,3 +120,18 @@ cyclopsctl.toml
 
 # Large test fixture (~82 MB) — kept locally for large-file testing, not in git.
 test_md/very_large_test_data.csv
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Font pipeline outputs
+# ─────────────────────────────────────────────────────────────────────────────
+# The pipelines in tools/ regenerate these; the finished fonts are committed
+# under assets/fonts/. Intermediates are large and reproducible.
+tools/iconfont/work/
+tools/bodyfont/out/
+tools/bodyfont/literata-main/
+tools/*/lit.zip
+tools/*/package-lock.json
+
+# Local repository backups (e.g. from a history rewrite)
+*.tar
+*.tar.gz

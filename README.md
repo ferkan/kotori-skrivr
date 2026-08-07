@@ -15,10 +15,17 @@ cursor ON line:       Some **bold** text here.   <- markers revealed
 
 Both modes ship; they suit different habits.
 
+**A design pass over the reading and writing experience.** Warm grounds instead of neutral grey, a serif body face, an 80-character centred measure, real leading, and block spacing around headings. Details and reasoning in [`docs/technical/`](docs/technical/).
+
 Also fixed in this fork:
 
 - **Crash recovery could inject content into the wrong file.** An untitled tab's recovery snapshot could be applied to a different, path-backed document that reused its tab id.
 - **The test suite did not compile.** 42 errors in test-only modules meant no test in the project could run — which was also hiding 5 genuine failures.
+- **Live inline mode was unreachable.** The mode switcher offered three of the four modes, and selecting the fourth drew no selection at all.
+- **Selection drifted in live mode.** Hit-testing measured line heights independently of the renderer, so on a document with headings a click landed several lines from the pointer, worsening further down the page.
+- **Headings rendered at 2.21:1 contrast**, below the floor for large text — the accent colour was used unchanged as document text. The same value shipped into exported HTML.
+- **The editor scanned the whole document twice per frame while typing**, once for a control that no longer existed.
+- **Screen readers announced the window controls as `" "`.** Close, minimize, maximize and more had no accessible name; nothing in the interface had a focus ring.
 
 ---
 
@@ -35,8 +42,10 @@ Also fixed in this fork:
 - **Undo/Redo** - Full undo/redo support per tab
 
 ### View Modes
+- **Live Inline WYSIWYG** - One continuous editing surface; markers reveal only on the cursor's line
 - **Split View** - Side-by-side raw editor and rendered preview with resizable divider; both panes are fully editable; optional **live scroll sync** (minimap **Sync** / **2-way** controls)
 - **Zen Mode** - Distraction-free writing with centered text column
+- **Position carries across modes** - Switching view keeps your place in the document
 
 ### Editor Features
 - **Syntax Highlighting** - Full-file syntax highlighting for 100+ languages (Rust, Python, JavaScript, Go, TypeScript, PowerShell, and more)
@@ -54,6 +63,7 @@ Also fixed in this fork:
 - **Auto-Save** - Configurable auto-save with temp-file safety
 - **Line Numbers** - Optional line number gutter
 - **Configurable Line Width** - Limit text width for readability (80/100/120 or custom)
+- **Typography built for reading** - [Literata](https://github.com/googlefonts/literata) for the document, Inter for the interface, JetBrains Mono for code; an 80-character centred measure and adjustable line height
 - **Custom Font Selection** - Choose preferred fonts for editor and UI; important for CJK regional glyph preferences
 - **Keyboard Shortcut Customization** - Rebind shortcuts via settings panel
 
@@ -90,11 +100,11 @@ Native rendering of 11 diagram types directly in the preview:
 - **AI-Ready** - Visual "breathing" indicator when terminal is waiting for input (perfect for AI agents)
 
 ### Additional Features
-- **Light & Dark Themes** - Beautiful themes with runtime switching; **custom Kotori Skrivr accent color** (Settings / Welcome) for headings, selection, tabs, and chrome
+- **Light & Dark Themes** - Warm paper and warm charcoal grounds, switchable at runtime; **custom accent color** (Settings / Welcome). Every colour pair is held to a WCAG contrast floor by a test, and a badly-chosen accent is corrected rather than rendered unreadable
 - **Document Outline & Statistics** - Navigate with outline panel; tabbed statistics showing word count, reading time, heading/link/image counts
 - **Export & Print** - Export to **PDF** or **themed HTML** (options dialog, Mermaid as SVG); **print preview** opens a temp PDF in the in-app viewer; copy as HTML
 - **Formatting Toolbar** - Quick access to bold, italic, headings, lists, links, Mermaid insert, and more
-- **Phosphor Icons** - Consistent icon font across ribbon, toolbar, panels, and preview controls
+- **Icon fonts** - Phosphor for interface chrome, plus a purpose-built Skrivr set for the formatting toolbar (built from source artwork by the pipeline in `tools/iconfont/`)
 - **Live Pipeline** - Pipe JSON/YAML content through shell commands (for developers)
 - **Custom Window** - Borderless window with custom title bar and resize handles
 - **Recent Files & Folders** - Click filename in status bar to access recently opened files and workspace folders
@@ -153,13 +163,17 @@ See [docs/cli.md](docs/cli.md) for full CLI documentation.
 
 ### View Modes
 
-Kotori Skrivr supports three view modes for Markdown files:
+Kotori Skrivr supports four view modes for Markdown files:
 
 - **Raw** - Plain text editing with syntax highlighting
-- **Rendered** - WYSIWYG editing with rendered markdown
+- **Rendered** - Block-level WYSIWYG; click a block to edit it as markdown
 - **Split** - Side-by-side raw editor and live preview
+- **Live** - Continuous inline WYSIWYG: text stays styled as you type, and
+  syntax markers hide except on the cursor's line
 
-Toggle between modes using the toolbar buttons or keyboard shortcuts.
+Cycle with `Cmd/Ctrl+E`, or pick a mode from the labelled switcher in the title
+bar. All four share one type scale, so headings do not change size when you
+switch, and the reading position carries across.
 
 ## Keyboard Shortcuts
 
@@ -217,6 +231,7 @@ Toggle between modes using the toolbar buttons or keyboard shortcuts.
 | Shortcut | Action |
 |----------|--------|
 | `F11` | Toggle fullscreen |
+| `Ctrl+E` | Cycle view mode (Raw / Rendered / Split / Live) |
 | `Ctrl+,` | Open settings |
 | `Ctrl+Shift+[` | Fold all |
 | `Ctrl+Shift+]` | Unfold all |
@@ -368,13 +383,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Task Master](https://github.com/eyaltoledano/claude-task-master) - AI task management for development workflows
 
 ### Contributors
-- [@Star-sumi](https://github.com/Star-sumi) — Windows single-instance foreground activation when opening files from Explorer ([PR #148](https://github.com/OlaProeis/Kotori Skrivr/pull/148), fixes [#147](https://github.com/OlaProeis/Kotori Skrivr/issues/147))
-- [@moabtools](https://github.com/moabtools) — Ctrl+Home / Ctrl+End document navigation in Rendered view ([PR #137](https://github.com/OlaProeis/Kotori Skrivr/pull/137))
-- [@liuxiaopai-ai](https://github.com/liuxiaopai-ai) — Nix/NixOS flake support for reproducible builds and dev shells ([PR #92](https://github.com/OlaProeis/Kotori Skrivr/pull/92))
-- [@blizzard007dev](https://github.com/blizzard007dev) — Welcome page for first-launch configuration ([PR #80](https://github.com/OlaProeis/Kotori Skrivr/pull/80))
-- [@wolverin0](https://github.com/wolverin0) — Integrated Terminal Workspace & Productivity Hub ([PR #74](https://github.com/OlaProeis/Kotori Skrivr/pull/74))
-- [@abcd-ca](https://github.com/abcd-ca) — Delete Line, Move Line, macOS file associations ([PR #29](https://github.com/OlaProeis/Kotori Skrivr/pull/29), [#30](https://github.com/OlaProeis/Kotori Skrivr/pull/30))
-- [@SteelCrab](https://github.com/SteelCrab) — CJK character rendering ([PR #8](https://github.com/OlaProeis/Kotori Skrivr/pull/8))
+- [@Star-sumi](https://github.com/Star-sumi) — Windows single-instance foreground activation when opening files from Explorer ([PR #148](https://github.com/OlaProeis/Ferrite/pull/148), fixes [#147](https://github.com/OlaProeis/Ferrite/issues/147))
+- [@moabtools](https://github.com/moabtools) — Ctrl+Home / Ctrl+End document navigation in Rendered view ([PR #137](https://github.com/OlaProeis/Ferrite/pull/137))
+- [@liuxiaopai-ai](https://github.com/liuxiaopai-ai) — Nix/NixOS flake support for reproducible builds and dev shells ([PR #92](https://github.com/OlaProeis/Ferrite/pull/92))
+- [@blizzard007dev](https://github.com/blizzard007dev) — Welcome page for first-launch configuration ([PR #80](https://github.com/OlaProeis/Ferrite/pull/80))
+- [@wolverin0](https://github.com/wolverin0) — Integrated Terminal Workspace & Productivity Hub ([PR #74](https://github.com/OlaProeis/Ferrite/pull/74))
+- [@abcd-ca](https://github.com/abcd-ca) — Delete Line, Move Line, macOS file associations ([PR #29](https://github.com/OlaProeis/Ferrite/pull/29), [#30](https://github.com/OlaProeis/Ferrite/pull/30))
+- [@SteelCrab](https://github.com/SteelCrab) — CJK character rendering ([PR #8](https://github.com/OlaProeis/Ferrite/pull/8))
 
 ## Sponsors
 
