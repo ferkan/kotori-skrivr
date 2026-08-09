@@ -135,3 +135,13 @@ tools/*/package-lock.json
 # Local repository backups (e.g. from a history rewrite)
 *.tar
 *.tar.gz
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Licensed fonts (local only — never commit)
+# ─────────────────────────────────────────────────────────────────────────────
+# Pangram Pangram faces are "all rights reserved" and free for personal use
+# only. This repository is public and MIT-licensed, so committing them would
+# redistribute and sub-license them beyond those terms. Not currently used by
+# the app; ignored so they cannot be added by accident.
+assets/fonts/PPEditorialNew-*.otf
+assets/fonts/PPMori-*.otf
