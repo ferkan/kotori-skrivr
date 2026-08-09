@@ -782,7 +782,7 @@ pub fn side_panel_toggle_strip(ui: &mut egui::Ui, colors: &ThemeColors, blocks_c
                 clicked = true;
             }
 
-            response.on_hover_text("Show side panel");
+            response.on_hover_text(t!("format_toolbar.show_side_panel").to_string());
         });
 
     clicked

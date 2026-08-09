@@ -270,9 +270,11 @@ impl FerriteApp {
                 // Collect tab info first to avoid borrow issues
                 let tab_count = self.state.tab_count();
                 let active_index = self.state.active_tab_index();
-                let tab_titles: Vec<(usize, String, bool)> = (0..tab_count)
+                let tab_titles: Vec<(usize, String, bool, bool)> = (0..tab_count)
                     .filter_map(|i| {
-                        self.state.tab(i).map(|tab| (i, tab.title(), i == active_index))
+                        self.state
+                            .tab(i)
+                            .map(|tab| (i, tab.title(), i == active_index, tab.is_modified()))
                     })
                     .collect();
 
@@ -283,12 +285,13 @@ impl FerriteApp {
                 let close_btn_width = 18.0;
                 let tab_padding = 16.0; // horizontal padding inside tab
                 let min_text_width = 60.0;
+                const MAX_TAB_WIDTH: f32 = 220.0;
 
                 // Pre-calculate tab widths using actual text measurement
                 // This ensures consistent sizing between layout and render passes
-                let tab_widths: Vec<f32> = tab_titles
+                let text_widths: Vec<f32> = tab_titles
                     .iter()
-                    .map(|(_, title, _)| {
+                    .map(|(_, title, _, _)| {
                         let text_galley = ui.fonts_mut(|f| {
                             f.layout_no_wrap(
                                 title.clone(),
@@ -296,8 +299,17 @@ impl FerriteApp {
                                 egui::Color32::WHITE // color doesn't affect measurement
                             )
                         });
-                        let text_width = text_galley.size().x.max(min_text_width);
-                        text_width + close_btn_width + tab_padding
+                        text_galley.size().x
+                    })
+                    .collect();
+                // `min_text_width` floors the *tab*, not the measurement: a short
+                // name still gets a 60 px tab, but it must not be recorded as
+                // 60 px wide or the truncation check below fires on every tab.
+                let tab_widths: Vec<f32> = text_widths
+                    .iter()
+                    .map(|&text_width| {
+                        (text_width.max(min_text_width) + close_btn_width + tab_padding)
+                            .min(MAX_TAB_WIDTH)
                     })
                     .collect();
 
@@ -341,13 +353,15 @@ impl FerriteApp {
                 };
                 let text_color = ui.visuals().text_color();
 
-                for (idx, (((tab_idx, title, selected), (x_pos, row)), tab_width)) in tab_titles
+                for (idx, ((((tab_idx, title, selected, is_modified), (x_pos, row)), tab_width), text_width)) in tab_titles
                     .iter()
                     .zip(tab_positions.iter())
                     .zip(tab_widths.iter())
+                    .zip(text_widths.iter())
                     .enumerate() {
                     // Use pre-calculated tab width for consistency
                     let tab_width = *tab_width;
+                    let text_width = *text_width;
 
                     let tab_rect = egui::Rect::from_min_size(
                         tab_bar_rect.min + egui::vec2(*x_pos, (*row as f32) * (tab_height + 2.0)),
@@ -355,10 +369,20 @@ impl FerriteApp {
                     );
 
                     // Tab interaction - support both click and drag for reordering
-                    let tab_response = ui.interact(
+                    let mut tab_response = ui.interact(
                         tab_rect,
                         egui::Id::new("tab").with(idx),
                         egui::Sense::click_and_drag()
+                    );
+
+                    crate::ui::a11y::name_widget(
+                        &tab_response,
+                        if *is_modified {
+                            format!("{} ({})", title, t!("tab.modified_suffix"))
+                        } else {
+                            title.clone()
+                        },
+                        true,
                     );
 
                     if tab_response.double_clicked() {
@@ -423,13 +447,24 @@ impl FerriteApp {
                         tab_rect.min + egui::vec2(8.0, 4.0),
                         egui::vec2(title_available_width, tab_height - 8.0)
                     );
-                    ui.painter().text(
-                        title_rect.left_center(),
-                        egui::Align2::LEFT_CENTER,
-                        title,
+                    let mut job = egui::text::LayoutJob::simple_singleline(
+                        title.clone(),
                         egui::FontId::default(),
                         text_color
                     );
+                    job.wrap.max_width = title_available_width;
+                    job.wrap.max_rows = 1;
+                    job.wrap.break_anywhere = true;
+                    let galley = ui.fonts_mut(|f| f.layout_job(job));
+                    let text_pos = egui::pos2(
+                        title_rect.left(),
+                        title_rect.center().y - galley.size().y / 2.0
+                    );
+                    let truncated = galley.size().x < text_width - 0.5;
+                    ui.painter().galley(text_pos, galley, text_color);
+                    if truncated {
+                        tab_response = tab_response.on_hover_text(title.clone());
+                    }
 
                     // Draw close button
                     let close_rect = egui::Rect::from_min_size(
@@ -449,18 +484,24 @@ impl FerriteApp {
                     );
                     crate::ui::a11y::focus_ring(ui, &close_response, 2);
 
-                    let close_color = if close_response.hovered() {
-                        egui::Color32::from_rgb(220, 80, 80)
+                    if *is_modified && !tab_response.hovered() && !close_response.hovered() {
+                        // Unsaved changes: a filled dot occupies the close slot
+                        // until the tab is hovered, then it yields to the close X.
+                        ui.painter().circle_filled(close_rect.center(), 3.5, text_color);
                     } else {
-                        text_color
-                    };
-                    ui.painter().text(
-                        close_rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        X,
-                        phosphor_font(12.0),
-                        close_color
-                    );
+                        let close_color = if close_response.hovered() {
+                            egui::Color32::from_rgb(220, 80, 80)
+                        } else {
+                            text_color
+                        };
+                        ui.painter().text(
+                            close_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            X,
+                            phosphor_font(12.0),
+                            close_color
+                        );
+                    }
 
                     // Handle interactions
                     if tab_response.clicked() && !close_response.hovered() {

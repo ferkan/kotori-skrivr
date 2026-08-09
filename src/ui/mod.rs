@@ -25,7 +25,7 @@ mod search;
 mod settings;
 pub mod settings_layout;
 mod terminal_panel;
-mod view_segment;
+pub(crate) mod view_segment;
 mod welcome;
 mod window;
 

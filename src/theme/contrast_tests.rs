@@ -5,6 +5,7 @@
 //! constants.
 
 use super::{ThemeColors, accent};
+use crate::ui::view_segment::{SEGMENT_BG_DARK, SEGMENT_BG_LIGHT, SEGMENT_TEXT_DARK, SEGMENT_TEXT_LIGHT};
 use eframe::egui::Color32;
 
 /// One contrast assertion: a named foreground/background pairing and the
@@ -147,4 +148,37 @@ fn border_subtle_reads_the_same_weight_in_both_themes() {
         diff <= 0.15,
         "border_subtle weight mismatch: light = {light_ratio:.2}:1, dark = {dark_ratio:.2}:1, diff {diff:.2} > 0.15"
     );
+}
+
+/// A disabled view-mode segment (Split/Rendered on file types that don't
+/// support them) must still read as "legible but inert" — the pre-existing
+/// hardcoded pair measured ~1.3:1 (dark) and ~1.4:1 (light), effectively
+/// invisible. Mirrors the derivation in `ViewModeSegment::show`.
+#[test]
+fn disabled_view_segment_text_meets_contrast_floor() {
+    let dark_disabled = accent::readable_on(
+        accent::lerp_color(SEGMENT_TEXT_DARK, SEGMENT_BG_DARK, 0.5),
+        SEGMENT_BG_DARK,
+        3.0,
+    );
+    let light_disabled = accent::readable_on(
+        accent::lerp_color(SEGMENT_TEXT_LIGHT, SEGMENT_BG_LIGHT, 0.5),
+        SEGMENT_BG_LIGHT,
+        3.0,
+    );
+
+    assert_contrast_floors(&[
+        ContrastCase {
+            label: "dark disabled view segment text".to_string(),
+            fg: dark_disabled,
+            bg: SEGMENT_BG_DARK,
+            floor: 3.0,
+        },
+        ContrastCase {
+            label: "light disabled view segment text".to_string(),
+            fg: light_disabled,
+            bg: SEGMENT_BG_LIGHT,
+            floor: 3.0,
+        },
+    ]);
 }

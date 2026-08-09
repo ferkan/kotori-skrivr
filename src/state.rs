@@ -2193,21 +2193,13 @@ impl Tab {
         true
     }
 
-    /// Label used for session persistence and crash recovery metadata (no `*` suffix).
+    /// Label used for session persistence and crash recovery metadata.
+    ///
+    /// Icon-free and marker-free: this string is written to disk and shown in
+    /// OS chrome, neither of which can render the Phosphor private-use-area
+    /// glyphs that [`Tab::title`] carries.
     pub fn persisted_session_display_title(&self) -> String {
-        if self.is_special() || self.is_image_viewer() || self.is_pdf_viewer() {
-            return self.title();
-        }
-        if let Some(path) = &self.path {
-            path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("Untitled")
-                .to_string()
-        } else {
-            self.untitled_display_name
-                .clone()
-                .unwrap_or_else(|| "Untitled".to_string())
-        }
+        self.plain_title()
     }
 
     /// Initial text for the rename-untitled dialog.
@@ -2218,57 +2210,61 @@ impl Tab {
     }
 
     /// Get the display title for this tab.
+    ///
+    /// The title is pure identity — no trailing `*` for unsaved changes.
+    /// Modified state is communicated by the tab strip's dot indicator and by
+    /// the tab's accessible name; see [`Tab::is_modified`].
     pub fn title(&self) -> String {
+        match self.title_icon() {
+            Some(icon) => format!("{} {}", icon, self.plain_title()),
+            None => self.plain_title(),
+        }
+    }
+
+    /// The Phosphor glyph prefixed to this tab's title, if the kind has one.
+    ///
+    /// Split out from [`Tab::title`] so that surfaces which cannot render a
+    /// private-use-area glyph — the OS window title, session metadata — can
+    /// take [`Tab::plain_title`] instead and get a clean label rather than tofu.
+    fn title_icon(&self) -> Option<&'static str> {
+        use crate::ui::phosphor_icons::{FILE_PDF, HOURGLASS, IMAGE, WARNING};
+
+        match &self.kind {
+            TabKind::Special(special) => Some(special.icon()),
+            TabKind::ImageViewer(_) => Some(IMAGE),
+            TabKind::PdfViewer(_) => Some(FILE_PDF),
+            _ if self.is_loading() => Some(HOURGLASS),
+            _ if self.is_load_error() => Some(WARNING),
+            _ => None,
+        }
+    }
+
+    /// The tab's name with no icon and no modified marker — just the identity.
+    pub fn plain_title(&self) -> String {
         if let TabKind::Special(special) = &self.kind {
-            return format!("{} {}", special.icon(), special.title());
+            return special.title().to_string();
         }
 
-        if matches!(&self.kind, TabKind::ImageViewer(_)) {
-            let name = self
-                .path
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str())
-                .unwrap_or("Image");
-            return format!("\u{1F5BC} {}", name); // framed picture emoji
-        }
-
-        if let TabKind::PdfViewer(vs) = &self.kind {
-            if let Some(title) = &vs.display_title {
-                return format!("\u{1F4C4} {}", title);
+        let fallback = match &self.kind {
+            TabKind::ImageViewer(_) => "Image",
+            TabKind::PdfViewer(vs) => {
+                if let Some(title) = &vs.display_title {
+                    return title.clone();
+                }
+                "PDF"
             }
-            let name = self
-                .path
-                .as_ref()
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str())
-                .unwrap_or("PDF");
-            return format!("\u{1F4C4} {}", name); // page facing up emoji
-        }
+            _ => "Untitled",
+        };
 
-        let name: String = if let Some(path) = &self.path {
+        if let Some(path) = &self.path {
             path.file_name()
                 .and_then(|n| n.to_str())
-                .unwrap_or("Untitled")
+                .unwrap_or(fallback)
                 .to_string()
         } else {
             self.untitled_display_name
                 .clone()
-                .unwrap_or_else(|| "Untitled".to_string())
-        };
-
-        if self.is_loading() {
-            return format!("\u{23F3} {}", name); // hourglass
-        }
-
-        if self.is_load_error() {
-            return format!("\u{26A0} {}", name); // warning sign
-        }
-
-        if self.is_modified() {
-            format!("{}*", name)
-        } else {
-            name
+                .unwrap_or_else(|| fallback.to_string())
         }
     }
 
@@ -6771,17 +6767,24 @@ mod tests {
 
     #[test]
     fn test_tab_title() {
+        // `title()` is pure identity: it never contains a modified marker.
+        // Modified state is communicated separately via `is_modified()`.
         let mut tab = Tab::new(0);
         assert_eq!(tab.title(), "Untitled");
+        assert!(!tab.title().contains('*'));
 
         tab.set_content("modified".to_string());
-        assert_eq!(tab.title(), "Untitled*");
+        assert_eq!(tab.title(), "Untitled");
+        assert!(tab.is_modified());
+        assert!(!tab.title().contains('*'));
 
         tab.path = Some(PathBuf::from("/test/document.md"));
-        assert_eq!(tab.title(), "document.md*");
+        assert_eq!(tab.title(), "document.md");
+        assert!(tab.is_modified());
 
         tab.mark_saved();
         assert_eq!(tab.title(), "document.md");
+        assert!(!tab.is_modified());
     }
 
     #[test]

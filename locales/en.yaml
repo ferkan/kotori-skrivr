@@ -41,9 +41,11 @@ view_mode:
   raw_desc: "Plain markdown text editing"
   rendered_desc: "WYSIWYG rendered editing"
   split_desc: "Raw editor + rendered preview side by side"
+  unavailable_reason: "not available for this file type"
 
 # Bottom markdown format toolbar (Raw / Split raw pane)
 format_toolbar:
+  show_side_panel: "Show side panel"
   mermaid_menu: "Mermaid…"
   mermaid_entry_tooltip: "Insert a Mermaid diagram at the cursor"
   mermaid_flowchart: "Flowchart"
@@ -863,6 +865,9 @@ pipeline:
 # Tab context menu
 tab:
   reveal_in_explorer: "Reveal in Explorer"
+  # Screen-reader only: appended to a tab's accessible name when it has
+  # unsaved changes. The visible signal is the dot in the close-button slot.
+  modified_suffix: "modified"
 
 # Mermaid diagrams
 mermaid:
@@ -936,6 +941,7 @@ welcome:
     editor: "Editor"
     cjk: "CJK Font Preference"
     files: "Files"
+    command_palette: "Command Palette"
   label:
     theme: "Theme"
     accent_color: "Kotori Skrivr accent color"
@@ -943,6 +949,9 @@ welcome:
   line_width_hint: "Limits how wide text lines can grow. Set a value for centered text in Zen Mode (F11)."
   show_on_empty_launch: "Show welcome on empty launch"
   show_on_empty_launch_hint: "Open this page when Kotori Skrivr starts with no documents loaded. Uncheck to start with a blank tab instead."
+  command_palette_hint: "Quick access to all commands. Press the shortcut to open a searchable command list."
+  shortcut_label: "Shortcut"
+  shortcut_change_hint: "You can change this later in Settings > Keyboard"
 
 # Terminal panel
 terminal:

@@ -55,6 +55,20 @@ const CORNER_ROUNDING: f32 = 10.0;
 /// Inner padding for the selected indicator.
 const INNER_PADDING: f32 = 2.0;
 
+/// Segment pill background, dark theme. Shared with the contrast regression
+/// tests in `theme::contrast_tests`.
+pub(crate) const SEGMENT_BG_DARK: Color32 = Color32::from_rgb(45, 45, 48);
+/// Segment pill background, light theme. Shared with the contrast regression
+/// tests in `theme::contrast_tests`.
+pub(crate) const SEGMENT_BG_LIGHT: Color32 = Color32::from_rgb(228, 228, 231);
+/// Enabled segment label colour, dark theme. Shared with the contrast
+/// regression tests in `theme::contrast_tests`, which derive the disabled
+/// colour from this the same way `ViewModeSegment::show` does.
+pub(crate) const SEGMENT_TEXT_DARK: Color32 = Color32::from_rgb(200, 200, 200);
+/// Enabled segment label colour, light theme. Shared with the contrast
+/// regression tests in `theme::contrast_tests`.
+pub(crate) const SEGMENT_TEXT_LIGHT: Color32 = Color32::from_rgb(60, 60, 65);
+
 /// Actions that can be triggered from the view mode segment.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ViewSegmentAction {
@@ -120,11 +134,7 @@ impl ViewModeSegment {
             file_type.is_markdown() || file_type.is_structured() || file_type.is_tabular();
 
         // Colors - refined for a polished pill appearance
-        let bg_color = if is_dark {
-            Color32::from_rgb(45, 45, 48) // Subtle dark background
-        } else {
-            Color32::from_rgb(228, 228, 231) // Light gray background
-        };
+        let bg_color = if is_dark { SEGMENT_BG_DARK } else { SEGMENT_BG_LIGHT };
 
         let selected_bg = if is_dark {
             ferrite_accent
@@ -138,21 +148,22 @@ impl ViewModeSegment {
             Color32::from_rgb(240, 240, 243)
         };
 
-        let text_color = if is_dark {
-            Color32::from_rgb(200, 200, 200)
-        } else {
-            Color32::from_rgb(60, 60, 65)
-        };
+        let text_color = if is_dark { SEGMENT_TEXT_DARK } else { SEGMENT_TEXT_LIGHT };
 
         // Derived from the fill it sits on, not hard-coded: white on the
         // default accent measures 2.2:1, and the accent is user-configurable.
         let selected_text = accent::on_accent(selected_bg);
 
-        let disabled_text = if is_dark {
-            Color32::from_rgb(80, 80, 85)
-        } else {
-            Color32::from_rgb(170, 170, 175)
-        };
+        // Muted halfway toward the background — what reads as "disabled" —
+        // then pulled back by `readable_on` until it clears the 3:1
+        // non-text/large-text floor. One expression stays correct in both
+        // themes, unlike the hardcoded pair this replaced, which drifted to
+        // ~1.3:1 (dark) and ~1.4:1 (light).
+        let disabled_text = accent::readable_on(
+            accent::lerp_color(text_color, bg_color, 0.5),
+            bg_color,
+            3.0,
+        );
 
         // Border/shadow for depth
         let border_color = if is_dark {
@@ -310,11 +321,25 @@ impl ViewModeSegment {
             }
 
             // Tooltip with keyboard shortcut
+            let disabled_reason = t!("view_mode.unavailable_reason").to_string();
             let tooltip_text = if *enabled {
                 format!("{} ({}+E to cycle)", tooltip, modifier_symbol())
             } else {
-                format!("{} (not available for this file type)", tooltip)
+                format!("{tooltip} ({disabled_reason})")
             };
+            // The segment paints either a bare word or a private-use-area
+            // glyph, so without an explicit name a screen reader gets nothing.
+            // A disabled segment's reason is otherwise reachable only by
+            // hovering, which a keyboard user never does.
+            crate::ui::a11y::name_widget(
+                &segment_response,
+                if *enabled {
+                    tooltip.clone()
+                } else {
+                    format!("{tooltip} — {disabled_reason}")
+                },
+                *enabled,
+            );
             // A focused segment must be locatable without a pointer.
             crate::ui::a11y::focus_ring(ui, &segment_response, CORNER_ROUNDING as u8);
             segment_response.on_hover_text(tooltip_text);
@@ -338,11 +363,7 @@ impl ViewModeSegment {
         let mut action: Option<ViewSegmentAction> = None;
 
         // Colors
-        let bg_color = if is_dark {
-            Color32::from_rgb(45, 45, 48)
-        } else {
-            Color32::from_rgb(228, 228, 231)
-        };
+        let bg_color = if is_dark { SEGMENT_BG_DARK } else { SEGMENT_BG_LIGHT };
 
         let selected_bg = if is_dark {
             ferrite_accent

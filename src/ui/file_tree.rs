@@ -362,24 +362,44 @@ impl FileTreePanel {
         );
         content_pos.x += 18.0; // Space for icon
 
-        // Name - color based on Git status
+        // Name - color based on Git status. Bounded to the remaining row
+        // width so a long name truncates instead of overrunning the panel
+        // edge and colliding with the trailing git-status marker.
         let name_color = Self::get_status_color(git_status, text_color, is_dark);
-        ui.painter().text(
-            content_pos,
-            egui::Align2::LEFT_TOP,
-            &node.name,
-            egui::FontId::proportional(12.0),
-            name_color,
-        );
+        let name_font = egui::FontId::proportional(12.0);
 
-        // Calculate name width for badge positioning
-        let name_galley = ui.fonts_mut(|f| {
-            f.layout_no_wrap(
-                node.name.clone(),
-                egui::FontId::proportional(12.0),
-                text_color,
-            )
+        // Reserve space for the badge before laying out the name, so the
+        // name never grows into it.
+        let badge_reserve = if git_status.is_visible() {
+            let badge_galley = ui.fonts_mut(|f| {
+                f.layout_no_wrap(
+                    git_status.icon().to_string(),
+                    egui::FontId::proportional(10.0),
+                    text_color,
+                )
+            });
+            badge_galley.size().x + 4.0
+        } else {
+            0.0
+        };
+        let available_name_width = (row_rect.right() - content_pos.x - badge_reserve).max(0.0);
+
+        let mut job =
+            egui::text::LayoutJob::simple_singleline(node.name.clone(), name_font.clone(), name_color);
+        job.wrap.max_width = available_name_width;
+        job.wrap.max_rows = 1;
+        job.wrap.break_anywhere = true;
+        let name_galley = ui.fonts_mut(|f| f.layout_job(job));
+        ui.painter()
+            .galley(content_pos, name_galley.clone(), name_color);
+
+        // The unwrapped width tells us whether the galley above actually
+        // had to truncate the name.
+        let full_name_galley = ui.fonts_mut(|f| {
+            f.layout_no_wrap(node.name.clone(), name_font, text_color)
         });
+        let truncated = full_name_galley.size().x > available_name_width;
+
         content_pos.x += name_galley.size().x + 4.0;
 
         // Git status badge (if not clean)
@@ -410,13 +430,18 @@ impl FileTreePanel {
             }
         }
 
-        // Context menu with Git status tooltip
-        let tooltip = if git_status.is_visible() {
-            format!("{} ({})", node.name, Self::status_description(git_status))
-        } else {
-            node.name.clone()
-        };
-        row_response.clone().on_hover_text(&tooltip);
+        // Tooltip: full name plus Git status description when either is
+        // otherwise unavailable at a glance (name truncated, or status not
+        // clean). Skipped entirely when neither applies — an unconditional
+        // tooltip on every row is noise.
+        if truncated || git_status.is_visible() {
+            let tooltip = if git_status.is_visible() {
+                format!("{} ({})", node.name, Self::status_description(git_status))
+            } else {
+                node.name.clone()
+            };
+            row_response.clone().on_hover_text(&tooltip);
+        }
 
         row_response.context_menu(|ui| {
             self.render_context_menu(ui, node, output);

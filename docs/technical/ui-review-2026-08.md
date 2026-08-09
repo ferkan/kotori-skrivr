@@ -311,43 +311,67 @@ is missing, keep Phosphor for that whole button group and note it.
 
 ---
 
-## 6. Deferred — needs a direction, not a patch
+## 6. Deferred list
 
-Roughly 158 px of permanent chrome sits above the first line of text: title
-bar 35 (`title_bar.rs:48`, `:81`, `:555`), ribbon 36 (`app/mod.rs:1561-1568`),
-tab bar 32 (`central_panel.rs:279`, `:540-554`), format toolbar 32
-(`central_panel.rs:851`), status bar 24 (`status_bar.rs:30`). At a 14 px body
-font that is about eight lines the writer cannot see. Sublime and iA Writer
-sit under 60 px.
+**Status as of 2026-08-09.** This section is the fork's running design backlog.
+Items are struck through as they land; the code is the authority, so verify
+before acting on anything still listed as open — this list has over-reported
+before.
 
-The ribbon and the format toolbar are two horizontal icon strips 60 px apart,
-and `ribbon.rs:506` confirms the split is historical — the format buttons were
-moved out of the ribbon — not designed. Collapsed, the format toolbar still
-spends 18 px to display the word "Format" and a chevron.
+### Resolved
 
-This needs `design-director` in proposal mode before any code moves.
+- [x] **Chrome height.** Was ~158 px of permanent chrome above the first line of
+  text (title bar 35, ribbon 36, tab bar 32, format toolbar 32, status bar 24).
+  The ribbon and format toolbar — two icon strips 60 px apart, split for
+  historical rather than design reasons — are now **one merged bar**
+  (`app/mod.rs`, the `"toolbar"` panel at `ui::TOOLBAR_HEIGHT` 32), and the
+  title bar is down to 28 (`title_bar.rs:81`).
+- [x] **Product name.** `welcome.rs` reads `branding::APP_NAME`, no longer the
+  literal "Ferrite".
+- [x] **`MARKER_ALPHA_SCALE`** raised 0.35 → 0.55 (`livemd/style.rs:25`).
+- [x] **Untranslated strings.** The ~30 listed here are down to zero. Keys were
+  added to `locales/en.yaml` only — `src/main.rs:30` sets `fallback = "en"`, so
+  the other nine locales fall back cleanly, and adding English copies to them
+  would only disguise what still needs translating.
+- [x] **Mixed icon systems in the tab strip.** Image, PDF, loading and error
+  tabs used Unicode emoji while special tabs used Phosphor — different baseline
+  and optical weight in the same strip. All four are now Phosphor (`IMAGE`,
+  `FILE_PDF`, `HOURGLASS`, `WARNING`).
 
-Other deferred items:
+  This forced a split in `Tab::title()`: it now composes
+  `title_icon()` + `plain_title()`, and every surface that cannot render a
+  private-use-area glyph — the OS window title, session/recovery metadata —
+  takes `plain_title()` and gets a clean label instead of tofu.
+- [x] **Unsaved-changes indicator.** The trailing `*` is gone from
+  `Tab::title()`, which is now pure identity. A filled dot occupies the
+  close-button slot and yields to the close `×` on hover. Screen readers get
+  the state from the tab's accessible name, which the `*` was previously the
+  only carrier of.
+- [x] **Nothing truncated.** Tab widths were unbounded — one long filename ate a
+  whole row of a wrapping tab strip. Now capped at `MAX_TAB_WIDTH` 220 px with
+  an ellipsised galley, and a tooltip *only* when the name actually truncated.
+  File-tree names are bounded the same way, against the row width minus the
+  git-status badge.
+- [x] **Disabled segments were illegible** — measured **1.3:1** dark and
+  **1.4:1** light, not the 1.8:1 originally recorded. Now derived, not
+  hardcoded: mute the enabled text halfway toward the background, then let
+  `accent::readable_on(..., 3.0)` pull it back to the floor. Lands at 3.25:1
+  dark / 3.02:1 light and stays correct in both themes from one expression,
+  which is what the hardcoded pair failed to do. Guarded by
+  `theme::contrast_tests::disabled_view_segment_text_meets_contrast_floor`.
 
-- ~30 user-visible strings bypass `t!` in a ten-locale app (`format_toolbar.rs`
-  `:270` `:321` `:357` `:366` `:599`; `view_segment.rs` `:144` `:150` `:159`
-  `:241` `:243` `:479-482`; `title_bar.rs:317`; `status_bar.rs` `:473-476`
-  `:558` `:589` `:603-609` `:666` `:755` `:764` `:786`; `welcome.rs` `:265-266`
-  `:397` `:400` `:409` `:437` `:445`).
-- `welcome.rs:85` renders the product name as "Ferrite" at 36 pt — upstream's
-  name, and the first thing a new user reads.
-- Tab bar renders Phosphor glyphs for special tabs (`state.rs:2166`) but
-  Unicode emoji for image/PDF/loading/error tabs (`:2176` `:2181` `:2189`
-  `:2204` `:2208`), which sit on a different baseline and optical weight.
-- Unsaved-changes indicator is a trailing `*` (`state.rs:2211-2212`); a filled
-  dot in the close-button slot (`central_panel.rs:433`) is the convention.
-- Tab widths are unbounded (`central_panel.rs:287-300`) and tree names never
-  truncate (`file_tree.rs:314-320`).
-- `MARKER_ALPHA_SCALE = 0.35` (`livemd/style.rs:19`) puts dark-theme markers at
-  ~2.6:1. Markers are text the user must read and edit when revealed, not
-  decoration; ~0.55 lands near 4.5:1.
-- Disabled segments are 1.8:1 (`view_segment.rs:111-115`) and give their reason
-  only in a tooltip.
+  The disabled *reason* was reachable only by hovering. Every segment now
+  carries an accessible name, disabled ones with the reason appended.
+
+### Still open
+
+- **File-tree row height is 22 px** against a WCAG 2.2 floor of 24 (item 3d
+  deferred this at 20 px; it has since gone to 22). Raising it changes sidebar
+  information density materially — a design-director call, not a bug fix.
+*(Nothing else. The two accessible-name strings introduced by this pass —
+the disabled-segment reason and the tab strip's "modified" suffix — went
+straight to `view_mode.unavailable_reason` and `tab.modified_suffix` rather
+than being logged here as debt.)*
 
 ---
 

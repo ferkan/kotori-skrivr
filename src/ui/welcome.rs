@@ -261,8 +261,8 @@ impl WelcomePanel {
                     if Self::setting_toggle(
                         ui,
                         &mut settings.strict_line_breaks,
-                        "Strict Line Breaks",
-                        "Treat single newlines as hard line breaks in rendered view",
+                        &t!("settings.editor.strict_line_breaks").to_string(),
+                        &t!("settings.editor.strict_line_breaks_tooltip").to_string(),
                         weak_color,
                     ) {
                         changed = true;
@@ -393,10 +393,10 @@ impl WelcomePanel {
                         });
 
                     // ── Command Palette ──────────────────────────────
-                    Self::section_heading(ui, "Command Palette", text_color);
+                    Self::section_heading(ui, &t!("welcome.section.command_palette").to_string(), text_color);
 
                     ui.label(
-                        RichText::new("Quick access to all commands. Press the shortcut to open a searchable command list.")
+                        RichText::new(t!("welcome.command_palette_hint").to_string())
                             .weak()
                             .small()
                             .color(weak_color),
@@ -405,7 +405,7 @@ impl WelcomePanel {
 
                     ui.horizontal(|ui| {
                         ui.label(
-                            RichText::new("Shortcut")
+                            RichText::new(t!("welcome.shortcut_label").to_string())
                                 .font(crate::fonts::chrome_bold_font(crate::theme::typescale::chrome::BODY))
                                 .color(text_color),
                         );
@@ -441,7 +441,7 @@ impl WelcomePanel {
                     });
 
                     ui.label(
-                        RichText::new("You can change this later in Settings > Keyboard Shortcuts")
+                        RichText::new(t!("welcome.shortcut_change_hint").to_string())
                             .weak()
                             .small()
                             .color(weak_color),

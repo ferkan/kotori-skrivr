@@ -764,7 +764,9 @@ impl FerriteApp {
         use crate::branding::APP_NAME;
 
         if let Some(tab) = self.state.active_tab() {
-            let tab_title = tab.title();
+            // `title()` carries a Phosphor private-use-area glyph, which would
+            // render as tofu in the OS window chrome — use the icon-free label.
+            let tab_title = tab.persisted_session_display_title();
             format!("{} - {}", tab_title, APP_NAME)
         } else {
             APP_NAME.to_string()
