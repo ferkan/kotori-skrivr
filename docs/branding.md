@@ -136,7 +136,7 @@ cp ferrite.desktop ~/.local/share/applications/
 # Icons (per XDG spec)
 for size in 16 32 48 64 128 256; do
     mkdir -p ~/.local/share/icons/hicolor/${size}x${size}/apps
-    cp ferrite_${size}.png ~/.local/share/icons/hicolor/${size}x${size}/apps/ferrite.png
+    cp assets/icons/linux/${size}x${size}/skrivr.png ~/.local/share/icons/hicolor/${size}x${size}/apps/skrivr.png
 done
 
 # Update icon cache

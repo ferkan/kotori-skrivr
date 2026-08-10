@@ -240,8 +240,8 @@ mkdir -p Ferrite.AppDir/usr/share/icons/hicolor/256x256/apps
 cp target/release/ferrite Ferrite.AppDir/usr/bin/
 cp assets/icons/linux/ferrite.desktop Ferrite.AppDir/
 cp assets/icons/linux/ferrite.desktop Ferrite.AppDir/usr/share/applications/
-cp assets/icons/linux/ferrite_256.png Ferrite.AppDir/usr/share/icons/hicolor/256x256/apps/ferrite.png
-cp assets/icons/linux/ferrite_256.png Ferrite.AppDir/ferrite.png
+cp assets/icons/linux/256x256/skrivr.png Ferrite.AppDir/usr/share/icons/hicolor/256x256/apps/skrivr.png
+cp assets/icons/linux/256x256/skrivr.png Ferrite.AppDir/skrivr.png
 
 # Create AppRun
 cat > Ferrite.AppDir/AppRun << 'EOF'

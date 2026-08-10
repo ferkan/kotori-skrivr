@@ -109,8 +109,8 @@ def generate_icons(source_path: str):
         resized = img.resize((size, size), Image.Resampling.LANCZOS)
         size_dir = linux_dir / f"{size}x{size}"
         size_dir.mkdir(exist_ok=True)
-        resized.save(size_dir / "ferrite.png", "PNG")
-        print(f"  OK {size}x{size}/ferrite.png")
+        resized.save(size_dir / "skrivr.png", "PNG")
+        print(f"  OK {size}x{size}/skrivr.png")
     
     # === PortableApps.com icons ===
     print("\n[PAF] Generating PortableApps.com icons...")
