@@ -250,8 +250,8 @@ jobs:
       - name: Generate macOS .icns icon
         run: |
           if [ -d "assets/icons/macos/app.iconset" ]; then
-            iconutil -c icns assets/icons/macos/app.iconset -o assets/icons/macos/Ferrite.icns
-            echo "Generated Ferrite.icns"
+            iconutil -c icns assets/icons/macos/app.iconset -o assets/icons/macos/Skrivr.icns
+            echo "Generated Skrivr.icns"
           else
             echo "Warning: app.iconset not found, skipping .icns generation"
           fi
