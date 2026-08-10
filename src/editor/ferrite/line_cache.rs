@@ -270,11 +270,13 @@ impl CacheKey {
         content: &str,
         revealed: bool,
         segments: &[StyledSegment],
+        line_height_px: f32,
         wrap_width: Option<f32>,
     ) -> Self {
         let mut hasher = DefaultHasher::new();
         content.hash(&mut hasher);
         revealed.hash(&mut hasher);
+        line_height_px.to_bits().hash(&mut hasher);
 
         for seg in segments {
             seg.text.hash(&mut hasher);
@@ -582,6 +584,15 @@ impl LineCache {
     /// reveal-appropriate display text: hidden markers are omitted, not
     /// merely invisible).
     ///
+    /// `line_height_px` is the row's intended height, decided by the caller
+    /// (see `FerriteEditor::livemd_styled_segments`). It is written to
+    /// `LayoutJob::first_row_min_height` unconditionally: epaint derives row
+    /// height from the sections' `line_height`, and a job with zero or
+    /// empty-text sections (a blank line) has nothing to derive one from,
+    /// collapsing to a near-zero row. Setting it directly is a no-op for a
+    /// line that already has real sections — their own `line_height` already
+    /// meets or exceeds it — and makes a blank line exactly one row tall.
+    ///
     /// # Panics
     /// Never panics: an empty `segments` slice lays out an empty string with
     /// a default `TextFormat`, matching `get_galley_highlighted`'s handling
@@ -591,10 +602,11 @@ impl LineCache {
         line_content: &str,
         revealed: bool,
         segments: &[StyledSegment],
+        line_height_px: f32,
         painter: &Painter,
         wrap_width: Option<f32>,
     ) -> Arc<Galley> {
-        let key = CacheKey::new_styled(line_content, revealed, segments, wrap_width);
+        let key = CacheKey::new_styled(line_content, revealed, segments, line_height_px, wrap_width);
 
         if let Some(entry) = self.cache.get_mut(&key) {
             self.access_counter += 1;
@@ -604,6 +616,7 @@ impl LineCache {
 
         let mut job = LayoutJob::default();
         job.wrap.max_width = wrap_width.unwrap_or(f32::INFINITY);
+        job.first_row_min_height = line_height_px;
 
         for segment in segments {
             job.append(&segment.text, 0.0, segment.format.clone());
@@ -626,9 +639,10 @@ impl LineCache {
         content: &str,
         revealed: bool,
         segments: &[StyledSegment],
+        line_height_px: f32,
         wrap_width: Option<f32>,
     ) {
-        let key = CacheKey::new_styled(content, revealed, segments, wrap_width);
+        let key = CacheKey::new_styled(content, revealed, segments, line_height_px, wrap_width);
         self.line_keys.insert(line_index, key);
     }
 
@@ -1462,16 +1476,16 @@ mod tests {
         // bit in the cache key produces a silent stale-render bug where a
         // line doesn't update when the cursor arrives.
         let segments = vec![plain_segment("bold")];
-        let key_hidden = CacheKey::new_styled("**bold**", false, &segments, None);
-        let key_revealed = CacheKey::new_styled("**bold**", true, &segments, None);
+        let key_hidden = CacheKey::new_styled("**bold**", false, &segments, 20.0, None);
+        let key_revealed = CacheKey::new_styled("**bold**", true, &segments, 20.0, None);
         assert_ne!(key_hidden, key_revealed);
     }
 
     #[test]
     fn styled_cache_key_stable_for_same_inputs() {
         let segments = vec![plain_segment("bold")];
-        let key1 = CacheKey::new_styled("**bold**", false, &segments, None);
-        let key2 = CacheKey::new_styled("**bold**", false, &segments, None);
+        let key1 = CacheKey::new_styled("**bold**", false, &segments, 20.0, None);
+        let key2 = CacheKey::new_styled("**bold**", false, &segments, 20.0, None);
         assert_eq!(key1, key2);
     }
 
@@ -1482,8 +1496,8 @@ mod tests {
         bold_fmt.format.font_id = FontId::new(20.0, egui::FontFamily::Monospace);
         let bold = vec![bold_fmt];
 
-        let key_plain = CacheKey::new_styled("text", false, &plain, None);
-        let key_bold = CacheKey::new_styled("text", false, &bold, None);
+        let key_plain = CacheKey::new_styled("text", false, &plain, 20.0, None);
+        let key_bold = CacheKey::new_styled("text", false, &bold, 20.0, None);
         assert_ne!(key_plain, key_bold);
     }
 
@@ -1496,10 +1510,10 @@ mod tests {
         ctx.run_ui(egui::RawInput::default(), |ui| {
             let painter = ui.painter();
             let segments = vec![plain_segment("hello")];
-            cache.get_galley_styled("hello", false, &segments, painter, None);
+            cache.get_galley_styled("hello", false, &segments, 20.0, painter, None);
             result_len = Some(cache.len());
             // Second call with identical inputs must hit the cache (len stays 1).
-            cache.get_galley_styled("hello", false, &segments, painter, None);
+            cache.get_galley_styled("hello", false, &segments, 20.0, painter, None);
         });
         assert_eq!(result_len, Some(1));
         assert_eq!(cache.len(), 1);
@@ -1513,12 +1527,43 @@ mod tests {
         ctx.run_ui(egui::RawInput::default(), |ui| {
             let painter = ui.painter();
             let segments = vec![plain_segment("hello")];
-            cache.get_galley_styled("hello", false, &segments, painter, None);
-            cache.get_galley_styled("hello", true, &segments, painter, None);
+            cache.get_galley_styled("hello", false, &segments, 20.0, painter, None);
+            cache.get_galley_styled("hello", true, &segments, 20.0, painter, None);
         });
         // Two distinct reveal states for the same content must produce two
         // distinct cache entries, not one stale hit.
         assert_eq!(cache.len(), 2);
+    }
+
+    /// The blank-line collapse regression: a `livemd` line with no spans
+    /// (empty `segments`) must still lay out to exactly `line_height_px`,
+    /// not the near-zero height epaint derives when a job has nothing to
+    /// read a `line_height` from. Laid out through a real `egui::Context`
+    /// with the app's own fonts, in the style of `gutter.rs`'s galley tests.
+    #[test]
+    fn blank_styled_line_lays_out_to_exactly_line_height_px() {
+        let mut cache = LineCache::new();
+        let ctx = egui::Context::default();
+        ctx.set_fonts(crate::fonts::create_font_definitions());
+
+        // An integer pixel value, so epaint's own pixel-snapping (rows are
+        // rounded to the nearest physical pixel at `pixels_per_point`) can't
+        // introduce a fractional mismatch unrelated to what this test checks.
+        let line_height_px = 25.0_f32;
+        let mut galley = None;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let painter = ui.painter();
+                galley = Some(cache.get_galley_styled("", false, &[], line_height_px, painter, None));
+            });
+        });
+        let galley = galley.expect("blank-line galley laid out inside ctx.run");
+
+        assert!(
+            (galley.size().y - line_height_px).abs() < 0.01,
+            "expected blank line height {line_height_px}, got {}",
+            galley.size().y
+        );
     }
 
     // ── Dynamic sizing tests ──────────────────────────────────────────────

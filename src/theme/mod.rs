@@ -98,9 +98,20 @@ impl ThemeColors {
         // unchanged. This also governs HTML export (`export/html.rs:85`).
         let on_page = accent::readable_on(accent, self.base.background, accent::MIN_TEXT_CONTRAST);
         self.editor.checkbox = on_page;
-        self.ui.accent = accent;
-        self.ui.accent_hover = accent::accent_hover(accent, dark);
-        self.base.selected = accent::selection_fill(accent, dark);
+
+        // Chrome painted *in* the accent has to be discernible against the
+        // ground it sits on, and one accent serves both themes. The Kotori
+        // green default measures 8.69:1 on the warm page but 1.88:1 on the
+        // warm charcoal — invisible as a heading colour or a selected fill.
+        // Lift it just far enough to clear the non-text floor, keeping the
+        // hue. An accent that already clears passes through untouched, so
+        // this changes nothing for well-chosen values; it is a floor, not a
+        // restyling. User accents are unconstrained in the welcome picker and
+        // hit exactly the same problem.
+        let on_ground = accent::readable_on(accent, self.base.background, accent::MIN_UI_CONTRAST);
+        self.ui.accent = on_ground;
+        self.ui.accent_hover = accent::accent_hover(on_ground, dark);
+        self.base.selected = accent::selection_fill(on_ground, dark);
     }
 
     /// Create theme colors for the given theme variant with a Ferrite accent.

@@ -642,7 +642,13 @@ impl FerriteApp {
                 self.render_recovery_conflict_banner(ui);
 
                 // Editor widget - extract settings values to avoid borrow conflicts
-                let font_size = self.state.settings.font_size;
+                // `font_size` is an apparent size: scaled so a given setting
+                // reads the same whichever face fills the serif slot. This is
+                // the single funnel every editor surface draws its body size
+                // from, so the correction lands everywhere at once — including
+                // the leading and inline-code sizes derived from it.
+                let font_size = self.state.settings.font_size
+                    * crate::fonts::body_size_scale(&self.state.settings.font_family);
                 let line_height = self.state.settings.line_height;
                 let font_family = self.state.settings.font_family.clone();
                 let word_wrap = self.state.settings.word_wrap;

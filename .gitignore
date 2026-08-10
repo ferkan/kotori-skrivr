@@ -145,3 +145,6 @@ tools/*/package-lock.json
 # the app; ignored so they cannot be added by accident.
 assets/fonts/PPEditorialNew-*.otf
 assets/fonts/PPMori-*.otf
+# ITC Garamond Std is a commercial Monotype/ITC retail font, not a personal-use
+# freebie, so the same reasoning applies even more strongly.
+assets/fonts/ITCGaramondStd-*.ttf

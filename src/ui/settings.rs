@@ -1157,6 +1157,21 @@ impl SettingsPanel {
             ui.label(RichText::new(t!("settings.editor.font_size")).font(crate::fonts::chrome_bold_font(crate::theme::typescale::chrome::BODY)));
             ui.add_space(8.0);
             ui.label(format!("{}px", settings.font_size as u32));
+            // When a face renders at a scaled size (see `body_size_scale`),
+            // say so rather than showing a number the editor does not use.
+            let scale = crate::fonts::body_size_scale(&settings.font_family);
+            if (scale - 1.0).abs() > 0.001 {
+                ui.add_space(6.0);
+                ui.label(
+                    RichText::new(t!(
+                        "settings.editor.font_size_rendered",
+                        size = format!("{:.1}", settings.font_size * scale),
+                        face = crate::fonts::active_serif_name()
+                    ))
+                    .size(crate::theme::typescale::chrome::SMALL)
+                    .weak(),
+                );
+            }
         });
         ui.add_space(4.0);
 
@@ -1186,6 +1201,48 @@ impl SettingsPanel {
                 }
             }
         });
+
+        ui.add_space(16.0);
+
+        // Line height. Previously config-file-only with no control at all,
+        // so leading could not be tuned from inside the app.
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(t!("settings.editor.line_height"))
+                    .font(crate::fonts::chrome_bold_font(crate::theme::typescale::chrome::BODY)),
+            );
+            ui.add_space(8.0);
+            ui.label(format!("{:.2}×", settings.line_height));
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(t!(
+                    "settings.editor.line_height_rendered",
+                    size = format!(
+                        "{:.0}",
+                        settings.font_size
+                            * crate::fonts::body_size_scale(&settings.font_family)
+                            * settings.line_height
+                    )
+                ))
+                .size(crate::theme::typescale::chrome::SMALL)
+                .weak(),
+            );
+        });
+        ui.add_space(4.0);
+
+        ui.spacing_mut().slider_width = layout::SLIDER_WIDTH;
+        let line_height_slider = ui.add(
+            egui::Slider::new(
+                &mut settings.line_height,
+                crate::theme::typescale::MIN_LINE_HEIGHT
+                    ..=crate::theme::typescale::MAX_LINE_HEIGHT,
+            )
+            .show_value(false)
+            .step_by(0.05),
+        );
+        if line_height_slider.changed() {
+            changed = true;
+        }
 
         ui.add_space(16.0);
         ui.separator();

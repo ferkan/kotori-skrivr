@@ -30,10 +30,10 @@ const MARKER_ALPHA_SCALE: f32 = 0.55;
 /// ramp shared with Rendered mode (`markdown::widgets`) — this used to be a
 /// locally-owned ×1.8..1.0 ramp, so the same H1 changed size when the user
 /// switched view mode.
-fn resolve_size(style: &InlineStyle, base_size: f32) -> f32 {
+fn resolve_size(style: &InlineStyle, base_size: f32, editor_font: &EditorFont) -> f32 {
     match style.heading {
         Some(level) => base_size * typescale::heading_size_ratio(level),
-        None if style.code => base_size * typescale::CODE_SIZE_RATIO,
+        None if style.code => base_size * crate::fonts::code_size_ratio(editor_font),
         None => base_size,
     }
 }
@@ -61,15 +61,25 @@ fn is_bold(style: &InlineStyle) -> bool {
 ///   report the same leading as the prose, or egui's per-row max-height
 ///   layout puts them on different baselines (this was a real, user-visible
 ///   bug: see `livemd_styled_segments` in `editor.rs`).
+/// * `code_bg` is accepted for interface symmetry with `marker_format_for`
+///   but is **not** applied here: `TextFormat.background` paints over
+///   `Glyph::logical_rect()`, whose height is the span's `line_height` —
+///   deliberately inflated for inline code (see `fonts::inline_code_line_height`)
+///   to pull the mono baseline onto the prose baseline. The background box
+///   inherited that inflation, overshooting below with no top padding. Inline
+///   code backgrounds are instead painted directly from glyph positions,
+///   immediately before the galley — see
+///   `rendering::text::paint_inline_code_chips`.
 pub fn text_format_for(
     style: &InlineStyle,
     editor_font: &EditorFont,
     base_size: f32,
     body_color: Color32,
+    _code_bg: Color32,
     line_height_px: f32,
     in_fence: bool,
 ) -> TextFormat {
-    let size = resolve_size(style, base_size);
+    let size = resolve_size(style, base_size, editor_font);
     let font_for_family = if style.code {
         &EditorFont::JetBrainsMono
     } else {
@@ -117,11 +127,19 @@ pub fn marker_format_for(
     editor_font: &EditorFont,
     base_size: f32,
     body_color: Color32,
+    code_bg: Color32,
     line_height_px: f32,
     in_fence: bool,
 ) -> TextFormat {
-    let mut format =
-        text_format_for(style, editor_font, base_size, body_color, line_height_px, in_fence);
+    let mut format = text_format_for(
+        style,
+        editor_font,
+        base_size,
+        body_color,
+        code_bg,
+        line_height_px,
+        in_fence,
+    );
     format.color = dim(format.color);
     if style.strikethrough {
         format.strikethrough = Stroke::new(1.0, format.color);
@@ -141,6 +159,7 @@ mod tests {
 
     const BASE_SIZE: f32 = 14.0;
     const BODY: Color32 = Color32::from_rgb(20, 20, 20);
+    const CODE_BG: Color32 = Color32::from_rgb(40, 40, 40);
     /// Arbitrary line height used by tests that don't care about its value,
     /// only that `line_height_px` is passed through verbatim (see
     /// `line_height_is_set_verbatim_from_caller` below for the case that does).
@@ -153,8 +172,8 @@ mod tests {
             heading: Some(1),
             ..Default::default()
         };
-        let body_fmt = text_format_for(&body, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false);
-        let h1_fmt = text_format_for(&h1, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false);
+        let body_fmt = text_format_for(&body, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
+        let h1_fmt = text_format_for(&h1, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
 
         assert!(
             h1_fmt.font_id.size > body_fmt.font_id.size,
@@ -164,7 +183,7 @@ mod tests {
             bold: true,
             ..Default::default()
         };
-        let bold_fmt = text_format_for(&bold_body, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false);
+        let bold_fmt = text_format_for(&bold_body, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
         assert_eq!(
             h1_fmt.font_id.family, bold_fmt.font_id.family,
             "heading must use the same bold family as explicitly bold text, \
@@ -180,8 +199,40 @@ mod tests {
             heading: Some(2),
             ..Default::default()
         };
-        let fmt = text_format_for(&h2, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false);
+        let fmt = text_format_for(&h2, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
         assert_eq!(fmt.color, BODY);
+    }
+
+    /// Inline code no longer carries a `TextFormat.background` — the chip is
+    /// painted separately from glyph positions (see
+    /// `rendering::text::paint_inline_code_chips`), because tying it to
+    /// `line_height` (deliberately inflated for baseline alignment) produced
+    /// a box that overshot below with no top padding.
+    #[test]
+    fn inline_code_carries_no_text_format_background() {
+        let prose = InlineStyle::default();
+        let code = InlineStyle {
+            code: true,
+            ..Default::default()
+        };
+        let prose_fmt = text_format_for(&prose, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
+        let code_fmt = text_format_for(&code, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
+        assert_eq!(prose_fmt.background, Color32::TRANSPARENT);
+        assert_eq!(code_fmt.background, Color32::TRANSPARENT);
+    }
+
+    /// A fenced line is entirely code and gets its own full-width band
+    /// painted separately, so a per-span background here would double up
+    /// (and stop ragged at the text's right edge) — moot now that inline
+    /// code never sets `background`, but kept as an explicit regression pin.
+    #[test]
+    fn code_in_a_fence_gets_no_per_span_background() {
+        let code = InlineStyle {
+            code: true,
+            ..Default::default()
+        };
+        let fmt = text_format_for(&code, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, true);
+        assert_eq!(fmt.background, Color32::TRANSPARENT);
     }
 
     #[test]
@@ -190,8 +241,8 @@ mod tests {
             code: true,
             ..Default::default()
         };
-        let inter_format = text_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false);
-        let jb_format = text_format_for(&style, &EditorFont::JetBrainsMono, BASE_SIZE, BODY, LINE_HEIGHT, false);
+        let inter_format = text_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
+        let jb_format = text_format_for(&style, &EditorFont::JetBrainsMono, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
         assert_eq!(inter_format.font_id.family, jb_format.font_id.family);
         assert!(matches!(
             &inter_format.font_id.family,
@@ -216,10 +267,10 @@ mod tests {
             ..Default::default()
         };
 
-        let f_plain = text_format_for(&plain, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false).font_id.family;
-        let f_bold = text_format_for(&bold, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false).font_id.family;
-        let f_italic = text_format_for(&italic, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false).font_id.family;
-        let f_bi = text_format_for(&bold_italic, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false).font_id.family;
+        let f_plain = text_format_for(&plain, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false).font_id.family;
+        let f_bold = text_format_for(&bold, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false).font_id.family;
+        let f_italic = text_format_for(&italic, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false).font_id.family;
+        let f_bi = text_format_for(&bold_italic, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false).font_id.family;
 
         assert_ne!(f_plain, f_bold);
         assert_ne!(f_plain, f_italic);
@@ -235,7 +286,7 @@ mod tests {
                 heading: Some(level),
                 ..Default::default()
             };
-            let fmt = text_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false);
+            let fmt = text_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
             sizes.push(fmt.font_id.size);
         }
         for w in sizes.windows(2) {
@@ -250,15 +301,15 @@ mod tests {
     #[test]
     fn non_heading_uses_base_size() {
         let style = InlineStyle::default();
-        let fmt = text_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false);
+        let fmt = text_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
         assert_eq!(fmt.font_id.size, BASE_SIZE);
     }
 
     #[test]
     fn marker_format_is_dimmed_relative_to_body() {
         let style = InlineStyle::default();
-        let content = text_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false);
-        let marker = marker_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false);
+        let content = text_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
+        let marker = marker_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
         assert!(marker.color.a() < content.color.a());
         // `Color32` stores premultiplied alpha (see `ecolor::Color32` docs),
         // so raw `.r()/.g()/.b()` accessor bytes necessarily shrink along
@@ -279,8 +330,8 @@ mod tests {
             bold: true,
             ..Default::default()
         };
-        let content = text_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false);
-        let marker = marker_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false);
+        let content = text_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
+        let marker = marker_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
         assert_eq!(marker.font_id, content.font_id);
     }
 
@@ -290,7 +341,7 @@ mod tests {
             strikethrough: true,
             ..Default::default()
         };
-        let fmt = text_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, LINE_HEIGHT, false);
+        let fmt = text_format_for(&style, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, LINE_HEIGHT, false);
         assert!(fmt.strikethrough.width > 0.0);
     }
 
@@ -308,8 +359,8 @@ mod tests {
             ..Default::default()
         };
         let line_height = BASE_SIZE * typescale::DEFAULT_BODY_LINE_HEIGHT;
-        let prose_fmt = text_format_for(&prose, &EditorFont::Inter, BASE_SIZE, BODY, line_height, false);
-        let code_fmt = text_format_for(&inline_code, &EditorFont::Inter, BASE_SIZE, BODY, line_height, false);
+        let prose_fmt = text_format_for(&prose, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, line_height, false);
+        let code_fmt = text_format_for(&inline_code, &EditorFont::Inter, BASE_SIZE, BODY, CODE_BG, line_height, false);
 
         assert_eq!(prose_fmt.line_height, Some(line_height));
         // Inline code deliberately reports a DIFFERENT line_height — that is
@@ -329,6 +380,7 @@ mod line_height_tests {
 
     const BASE: f32 = 16.0;
     const BODY: Color32 = Color32::BLACK;
+    const CODE_BG: Color32 = Color32::from_rgb(40, 40, 40);
 
     fn style_with(code: bool, heading: Option<u8>) -> InlineStyle {
         InlineStyle {
@@ -351,6 +403,7 @@ mod line_height_tests {
             &EditorFont::Literata,
             BASE,
             BODY,
+            CODE_BG,
             line_height,
             false,
         );
@@ -359,6 +412,7 @@ mod line_height_tests {
             &EditorFont::Literata,
             BASE,
             BODY,
+            CODE_BG,
             line_height,
             false,
         );
@@ -397,6 +451,7 @@ mod line_height_tests {
             &EditorFont::Literata,
             BASE,
             BODY,
+            CODE_BG,
             line_height,
             false,
         );
@@ -405,6 +460,7 @@ mod line_height_tests {
             &EditorFont::Literata,
             BASE,
             BODY,
+            CODE_BG,
             line_height,
             false,
         );
@@ -422,6 +478,7 @@ mod line_height_tests {
                 &EditorFont::Literata,
                 BASE,
                 BODY,
+                CODE_BG,
                 lh,
                 false,
             );

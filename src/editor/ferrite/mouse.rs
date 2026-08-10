@@ -135,7 +135,8 @@ impl FerriteEditor {
 
         // Color is never painted here -- only used to build a valid
         // TextFormat for width measurement.
-        let (revealed, segments, _) = self.livemd_styled_segments(line, source_line, Color32::WHITE);
+        let (revealed, segments, _) =
+            self.livemd_styled_segments(line, source_line, Color32::WHITE, Color32::TRANSPARENT);
 
         let display_text: String = segments.iter().map(|s| s.text.as_str()).collect();
 

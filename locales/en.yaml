@@ -168,6 +168,11 @@ settings:
     title: "Editor"
     font_family: "Font"
     font_size: "Font Size"
+    # Shown when the active body face renders at a scaled size so that a given
+    # setting reads the same across faces (see fonts::body_size_scale).
+    font_size_rendered: "renders at %{size}px — %{face} sets smaller"
+    line_height: "Line Height"
+    line_height_rendered: "%{size}px per row"
     font_inter_desc: "Modern, clean proportional font"
     font_jetbrains_desc: "Monospace font for code"
     custom_font: "Custom System Font"

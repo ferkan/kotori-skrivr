@@ -58,6 +58,10 @@ pub fn render_cursor(
     wrap_width: f32,
     cursor_color: Color32,
     cursor_visible: bool,
+    // `(top_offset, em_box_px)` for the line the caret is on: how far the text
+    // is shifted down inside its row, and how tall the glyphs actually are.
+    // `None` keeps the legacy row-sized caret.
+    caret_box: Option<(f32, f32)>,
 ) {
     // Skip rendering if cursor is in hidden phase of blink cycle
     if !cursor_visible {
@@ -85,6 +89,16 @@ pub fn render_cursor(
             text_start_x,
             line_top_y,
         )
+    };
+
+    // The caret marks the text, not the row. Sizing it from the row makes it
+    // span the leading as well, so it overshoots below the glyphs; placing it
+    // at the row top leaves it floating above them once the text is centred
+    // in its row. Both are corrected here rather than in the two position
+    // helpers, so the wrapped and unwrapped paths cannot drift apart.
+    let (cursor_y, cursor_height) = match caret_box {
+        Some((top_offset, em_box_px)) => (cursor_y + top_offset, em_box_px),
+        None => (cursor_y, cursor_height),
     };
 
     // Draw cursor as a thin vertical line

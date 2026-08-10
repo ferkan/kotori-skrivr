@@ -1494,8 +1494,15 @@ mod tests {
         let colors = SemanticMinimapColors::new(true, crate::theme::accent::default_accent());
         // Dark theme should have dark background
         assert!(colors.background.r() < 50);
-        // Current section background should be distinguishable
-        assert!(colors.current_section_bg.r() > colors.background.r());
+        // Current section background should be distinguishable. Measured by
+        // luminance, not by the red channel: `.r()` was standing in for
+        // "brighter", which only held while the accent was warm. A green
+        // accent is lighter than the ground with a *lower* red channel.
+        assert!(
+            crate::theme::accent::contrast_ratio(colors.current_section_bg, colors.background)
+                > 1.05,
+            "current section band is indistinguishable from the minimap ground"
+        );
     }
 
     #[test]

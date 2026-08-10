@@ -1550,7 +1550,11 @@ impl EditorFont {
     /// Get the display name for the font.
     pub fn display_name(&self) -> String {
         match self {
-            EditorFont::Literata => "Literata".to_string(),
+            // This variant names the serif BODY slot. A local ITC Garamond
+            // Condensed takes that slot when installed, so report the face
+            // actually in use rather than claiming Literata while rendering
+            // something else.
+            EditorFont::Literata => crate::fonts::active_serif_name().to_string(),
             EditorFont::Inter => "Inter".to_string(),
             EditorFont::JetBrainsMono => "JetBrains Mono".to_string(),
             EditorFont::Custom(name) => name.clone(),
@@ -2576,9 +2580,11 @@ impl Default for Settings {
             accent_color: crate::theme::accent::DEFAULT_ACCENT_RGB,
             view_mode: ViewMode::default(),
             show_line_numbers: true,
-            // 16px is a reading default; 14 is a code-editor default. The
-            // editing surface is prose first.
-            font_size: 16.0,
+            // 18px is a reading default; 14 is a code-editor default. The
+            // editing surface is prose first. Raised from 16 after the serif
+            // body face landed — 16 read small once the page was set in a
+            // text serif rather than a UI grotesque.
+            font_size: 18.0,
             line_height: crate::theme::typescale::DEFAULT_BODY_LINE_HEIGHT,
             font_family: EditorFont::default(),
             cjk_font_preference: CjkFontPreference::default(),
@@ -3130,7 +3136,7 @@ mod tests {
         assert_eq!(settings.theme, Theme::Light);
         assert_eq!(settings.view_mode, ViewMode::Raw);
         assert!(settings.show_line_numbers);
-        assert_eq!(settings.font_size, 16.0);
+        assert_eq!(settings.font_size, 18.0);
         assert!(settings.recent_files.is_empty());
         assert_eq!(settings.max_recent_files, 20);
         assert_eq!(settings.window_size.width, 1200.0);
@@ -3450,7 +3456,7 @@ mod tests {
         // All other fields should have defaults
         assert_eq!(settings.view_mode, ViewMode::Raw);
         assert!(settings.show_line_numbers);
-        assert_eq!(settings.font_size, 16.0);
+        assert_eq!(settings.font_size, 18.0);
     }
 
     #[test]
@@ -4226,7 +4232,7 @@ mod tests {
 
         // All other fields should have their defaults
         assert_eq!(settings.theme, Theme::Light);
-        assert_eq!(settings.font_size, 16.0);
+        assert_eq!(settings.font_size, 18.0);
         assert_eq!(settings.view_mode, ViewMode::Raw);
         assert!(settings.show_line_numbers);
     }

@@ -399,6 +399,9 @@ mod tests {
         let loaded: Settings = Settings::from_json_sanitized(&contents).unwrap();
 
         assert_eq!(loaded.theme, Theme::Dark);
+        // The explicit 16.0 written above, deliberately not the default: this
+        // asserts a stored value survives the round-trip, so it must not
+        // track whatever `Settings::default()` currently says.
         assert_eq!(loaded.font_size, 16.0);
     }
 
@@ -425,7 +428,7 @@ mod tests {
 
         assert_eq!(settings.theme, Theme::Dark);
         // Missing fields should have defaults
-        assert_eq!(settings.font_size, 16.0);
+        assert_eq!(settings.font_size, 18.0);
         assert!(settings.show_line_numbers);
     }
 
@@ -579,7 +582,7 @@ mod tests {
 
         // Should always return valid settings, even if file doesn't exist
         // Verify we got valid defaults by checking a known default value
-        assert_eq!(settings.font_size, 16.0);
+        assert_eq!(settings.font_size, 18.0);
     }
 
     #[test]

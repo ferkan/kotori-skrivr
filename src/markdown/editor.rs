@@ -1908,7 +1908,7 @@ fn render_node_with_structural_keys(
             language, literal, ..
         } => {
             render_code_block(
-                ui, source, edit_state, colors, font_size, language, literal, node,
+                ui, source, edit_state, colors, font_size, editor_font, language, literal, node,
             );
         }
         MarkdownNodeType::BlockQuote => {
@@ -2127,7 +2127,7 @@ fn render_node(
             language, literal, ..
         } => {
             render_code_block(
-                ui, source, edit_state, colors, font_size, language, literal, node,
+                ui, source, edit_state, colors, font_size, editor_font, language, literal, node,
             );
         }
         MarkdownNodeType::BlockQuote => {
@@ -4523,6 +4523,7 @@ fn render_code_block(
     edit_state: &mut EditState,
     colors: &EditorColors,
     font_size: f32,
+    editor_font: &EditorFont,
     language: &str,
     literal: &str,
     node: &MarkdownNode,
@@ -4585,6 +4586,7 @@ fn render_code_block(
 
             let result = EditableCodeBlock::new(&mut code_data)
                 .font_size(font_size)
+                .editor_font(editor_font.clone())
                 .dark_mode(dark_mode)
                 .colors(widget_colors)
                 .id(code_block_id)

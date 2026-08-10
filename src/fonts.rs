@@ -975,6 +975,22 @@ const FONT_PHOSPHOR: &str = "phosphor";
 const ASCENT_EM_INTER: f32 = 0.9688;
 const ASCENT_EM_LITERATA: f32 = 1.1770;
 const ASCENT_EM_JETBRAINS: f32 = 1.0200;
+/// ITC Garamond Std Condensed's ascent (hhea) is far shallower than
+/// Literata's — 0.7031 against 1.1770, which is 7.6 px at a 16 px body.
+/// Baseline corrections derived from the wrong value put inline code a
+/// visible distance off, and send the checkbox nudge in the opposite
+/// direction, so this must follow whichever face is actually loaded into the
+/// slot. This is the `hhea` ascent, which is what the rasterizer actually
+/// places the baseline against, not a normalized typographic value.
+const ASCENT_EM_GARAMOND_COND: f32 = 0.7031;
+
+/// Ascent-over-em for the gutter's monospace face (JetBrains Mono), for
+/// callers that need to align a numeral's baseline against body text set in
+/// some other font — see `gutter::render_line_number`. A single accessor so
+/// the gutter module never copies the constant out of step with `ascent_em`.
+pub(crate) fn ascent_em_jetbrains() -> f32 {
+    ASCENT_EM_JETBRAINS
+}
 
 /// Ascent-over-em for an editor font.
 ///
@@ -984,12 +1000,87 @@ const ASCENT_EM_JETBRAINS: f32 = 1.0200;
 pub fn ascent_em(font: &crate::config::EditorFont) -> f32 {
     use crate::config::EditorFont;
     match font {
-        EditorFont::Literata => ASCENT_EM_LITERATA,
+        // The serif variant names a *slot*, not a specific file: a local face
+        // takes the slot when installed (see `local_font_bytes`).
+        EditorFont::Literata => {
+            if local_serif_available() {
+                ASCENT_EM_GARAMOND_COND
+            } else {
+                ASCENT_EM_LITERATA
+            }
+        }
         EditorFont::JetBrainsMono => ASCENT_EM_JETBRAINS,
         EditorFont::Inter => ASCENT_EM_INTER,
         EditorFont::Custom(_) => ASCENT_EM_INTER,
     }
 }
+
+/// Descent as a fraction of em, per embedded family (hhea.descender / unitsPerEm,
+/// taken as a positive magnitude). Measured from the shipped files, same slot-
+/// aware shape as [`ascent_em`]: a local face in the serif slot carries its own
+/// descent, not Literata's.
+const DESCENT_EM_INTER: f32 = 0.2412;
+const DESCENT_EM_LITERATA: f32 = 0.3080;
+const DESCENT_EM_JETBRAINS: f32 = 0.3000;
+const DESCENT_EM_GARAMOND_COND: f32 = 0.2969;
+
+/// Descent-over-em for an editor font. See [`ascent_em`] for the fallback
+/// rationale (`Custom` resolves to Inter's value).
+pub fn descent_em(font: &crate::config::EditorFont) -> f32 {
+    use crate::config::EditorFont;
+    match font {
+        EditorFont::Literata => {
+            if local_serif_available() {
+                DESCENT_EM_GARAMOND_COND
+            } else {
+                DESCENT_EM_LITERATA
+            }
+        }
+        EditorFont::JetBrainsMono => DESCENT_EM_JETBRAINS,
+        EditorFont::Inter => DESCENT_EM_INTER,
+        EditorFont::Custom(_) => DESCENT_EM_INTER,
+    }
+}
+
+/// How far to push a line's galley down so its em box (ascent + descent) is
+/// centred in its row, instead of sitting flush against the top.
+///
+/// epaint places a glyph's baseline at `ascent` from the row top (default
+/// `valign: BOTTOM`, row height equal to the span's `line_height`), so all of
+/// a face's external leading — `line_height_px` minus its em box — lands
+/// below the descender. Centring the em box splits that leading evenly above
+/// and below.
+///
+/// Clamped to `0.0`: a face whose em box is already taller than the row (e.g.
+/// Literata's 1.485 em against an 18 px body's 25.2 px row) needs no offset,
+/// and must get none — this is the guard that keeps the Literata path
+/// byte-identical to before this existed.
+pub fn text_top_offset(
+    font: &crate::config::EditorFont,
+    line_font_size: f32,
+    line_height_px: f32,
+) -> f32 {
+    ((line_height_px - em_box_px(font, line_font_size)) / 2.0).max(0.0)
+}
+
+/// The face's own ascent-to-descent extent at a given size — the vertical
+/// space the glyphs actually occupy, excluding external leading.
+///
+/// This is the caret's height. A caret sized from the *row* instead spans the
+/// leading too, so it overshoots the text it marks — and on a row whose height
+/// was inflated for an unrelated reason (a heading, or a line carrying inline
+/// code) it overshoots by a different amount on every line.
+pub fn em_box_px(font: &crate::config::EditorFont, line_font_size: f32) -> f32 {
+    (ascent_em(font) + descent_em(font)) * line_font_size
+}
+
+/// Outline-measured cap height and descender depth for JetBrains Mono's `H`
+/// and `p` glyphs, as a fraction of em — **not** the `hhea` ascent/descent,
+/// which include internal leading and are what made the old
+/// `TextFormat.background` inline-code box overshoot below with no top
+/// padding (see `paint_inline_code_chips`).
+pub const CAP_EM_JETBRAINS: f32 = 0.7300;
+pub const DESC_EM_JETBRAINS: f32 = 0.1800;
 
 /// `line_height` to give an inline-code span so its baseline lands on the
 /// baseline of the surrounding prose.
@@ -1042,7 +1133,7 @@ mod baseline_metric_tests {
             EditorFont::JetBrainsMono,
         ] {
             for body_size in [12.0_f32, 16.0, 24.0] {
-                let code_size = body_size * crate::theme::typescale::CODE_SIZE_RATIO;
+                let code_size = body_size * code_size_ratio(&body_font);
                 let row = body_size * crate::theme::typescale::DEFAULT_BODY_LINE_HEIGHT;
 
                 let lh = inline_code_line_height(&body_font, body_size, code_size, row);
@@ -1063,12 +1154,49 @@ mod baseline_metric_tests {
     #[test]
     fn mono_body_font_needs_almost_no_correction() {
         let body = 16.0_f32;
-        let code = body * crate::theme::typescale::CODE_SIZE_RATIO;
+        let code = body * code_size_ratio(&EditorFont::JetBrainsMono);
         let row = body * crate::theme::typescale::DEFAULT_BODY_LINE_HEIGHT;
         let lh = inline_code_line_height(&EditorFont::JetBrainsMono, body, code, row);
         // Only the size difference remains, not a family ascent mismatch.
         let expected = row + ASCENT_EM_JETBRAINS * code - ASCENT_EM_JETBRAINS * body;
         assert!((lh - expected).abs() < 0.01);
+    }
+
+    /// Only a local face in the serif slot is scaled; every other family
+    /// renders at its nominal size. Environment-independent — this holds
+    /// whether or not the optional face is installed.
+    #[test]
+    fn body_size_scale_leaves_non_serif_slot_faces_alone() {
+        for font in [
+            EditorFont::JetBrainsMono,
+            EditorFont::Inter,
+            EditorFont::Custom("Whatever".to_string()),
+        ] {
+            assert_eq!(
+                super::body_size_scale(&font),
+                1.0,
+                "{font:?} must not be rescaled"
+            );
+        }
+    }
+
+    /// The point of the scale: a scaled body renders at the same x-height as
+    /// the face it replaced, so a given `font_size` reads the same either way.
+    #[test]
+    fn body_size_scale_equalizes_apparent_size() {
+        let scale = super::body_size_scale(&EditorFont::Literata);
+        let nominal = 16.0_f32;
+
+        if super::local_serif_available() {
+            let swapped = nominal * scale * super::XHEIGHT_EM_GARAMOND_COND;
+            let baseline = nominal * super::XHEIGHT_EM_LITERATA;
+            assert!(
+                (swapped - baseline).abs() < 0.01,
+                "scaled x-height {swapped:.3} vs Literata {baseline:.3}"
+            );
+        } else {
+            assert_eq!(scale, 1.0, "no local face: nothing to compensate for");
+        }
     }
 
     /// Never return a degenerate line height, whatever the inputs.
@@ -1086,18 +1214,271 @@ mod baseline_metric_tests {
             }
         }
     }
+
+    /// `descent_em` must follow the same slot-aware branching as `ascent_em`:
+    /// a local face in the serif slot carries its own descent, not
+    /// Literata's, and every other family is unconditional.
+    #[test]
+    fn descent_em_is_slot_aware_like_ascent_em() {
+        assert_eq!(descent_em(&EditorFont::Inter), DESCENT_EM_INTER);
+        assert_eq!(descent_em(&EditorFont::JetBrainsMono), DESCENT_EM_JETBRAINS);
+        assert_eq!(
+            descent_em(&EditorFont::Custom("Whatever".to_string())),
+            DESCENT_EM_INTER
+        );
+
+        let expected = if local_serif_available() {
+            DESCENT_EM_GARAMOND_COND
+        } else {
+            DESCENT_EM_LITERATA
+        };
+        assert_eq!(descent_em(&EditorFont::Literata), expected);
+    }
+
+    /// The no-regression guard: Literata's em box (1.485 em) is already
+    /// taller than an 18 px body's 25.2 px row (1.4 leading) at both 16 and
+    /// 18 px, so the offset must be exactly 0 — the fallback path is
+    /// untouched.
+    ///
+    /// Two things are pinned deliberately rather than taken live:
+    /// - The 1.4 leading is the value the item-2 root cause was measured
+    ///   against; `theme::typescale::DEFAULT_BODY_LINE_HEIGHT` is a tuning
+    ///   knob that can move independently of this guard.
+    /// - The em box comes from the raw Literata constants, not
+    ///   `text_top_offset(&EditorFont::Literata, ..)`: that goes through the
+    ///   serif *slot*, which this dev checkout may have a local Garamond
+    ///   installed into (see `local_serif_available`), and the claim under
+    ///   test is specifically about the embedded Literata face.
+    #[test]
+    fn text_top_offset_is_zero_for_literata() {
+        const MEASURED_LEADING: f32 = 1.4;
+        for body_size in [16.0_f32, 18.0] {
+            let row_height = body_size * MEASURED_LEADING;
+            let em_box_px = (ASCENT_EM_LITERATA + DESCENT_EM_LITERATA) * body_size;
+            let offset = ((row_height - em_box_px) / 2.0).max(0.0);
+            assert_eq!(offset, 0.0, "Literata @ {body_size}px must get no offset");
+        }
+    }
+
+    /// The Garamond case this offset exists for: its 1.000 em box is
+    /// narrower than the row, so the local serif slot (when installed) must
+    /// get a positive, centring offset.
+    #[test]
+    fn text_top_offset_is_positive_for_garamond_when_installed() {
+        if !local_serif_available() {
+            return;
+        }
+        let body_size = 18.0_f32;
+        let row_height = body_size * crate::theme::typescale::DEFAULT_BODY_LINE_HEIGHT;
+        let offset = text_top_offset(&EditorFont::Literata, body_size, row_height);
+        assert!(offset > 0.0, "expected a positive offset, got {offset}");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Optional local faces
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Serif body face preferred when present locally, by weight slot.
+///
+/// Book is ITC Garamond's text weight (regular/bold/italic/bold-italic).
+/// `ITCGaramondStd-LtCond.ttf` / `-LtCondIta.ttf` (Light) are deliberately
+/// unused here — Light is a display weight and goes thin and fragile at a
+/// 16 px body on screen.
+const LOCAL_SERIF: [&str; 4] = [
+    "ITCGaramondStd-BkCond.ttf",
+    "ITCGaramondStd-BdCond.ttf",
+    "ITCGaramondStd-BkCondIta.ttf",
+    "ITCGaramondStd-BdCondIta.ttf",
+];
+
+/// Read a font from `assets/fonts/` at runtime, if it is there.
+///
+/// ITC Garamond Std is a commercial Monotype/ITC retail font, not a personal-
+/// use freebie. This repository is public and MIT-licensed, so committing it
+/// would redistribute and sub-license it beyond those terms. It is therefore
+/// gitignored and loaded from disk when present, with the embedded Literata
+/// as the fallback so a fresh clone still builds and looks right.
+///
+/// Returns `None` for any failure, including a corrupt or unreadable file:
+/// a missing optional font must degrade to the fallback, never fail startup.
+fn local_font_bytes(file_name: &str) -> Option<Vec<u8>> {
+    // Running from the repo, and from a bundle beside the executable.
+    let mut roots: Vec<std::path::PathBuf> = vec![std::path::PathBuf::from("assets/fonts")];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            roots.push(dir.join("assets/fonts"));
+            roots.push(dir.join("../Resources/fonts"));
+        }
+    }
+    for root in roots {
+        let path = root.join(file_name);
+        if let Ok(bytes) = std::fs::read(&path) {
+            if !bytes.is_empty() {
+                log::info!("Using local font {}", path.display());
+                return Some(bytes);
+            }
+        }
+    }
+    None
+}
+
+/// `FontData` for a slot: the local face if available, else the embedded one.
+fn font_data_for_slot(local_file: &str, embedded: &'static [u8]) -> Arc<FontData> {
+    match local_font_bytes(local_file) {
+        Some(bytes) => Arc::new(FontData::from_owned(bytes)),
+        None => Arc::new(FontData::from_static(embedded)),
+    }
+}
+
+/// Whether the local serif body face is installed.
+///
+/// Cached: this probes the filesystem, and the font metrics below are consulted
+/// while laying out every styled span.
+pub fn local_serif_available() -> bool {
+    static PRESENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PRESENT.get_or_init(|| local_font_bytes(LOCAL_SERIF[0]).is_some())
+}
+
+/// Name of the serif body face actually in use, for display in settings.
+pub fn active_serif_name() -> &'static str {
+    if local_serif_available() {
+        "ITC Garamond Condensed"
+    } else {
+        "Literata"
+    }
 }
 
 /// x-height as a fraction of em, per embedded family (OS/2 `sxHeight`).
+///
+/// Not true of ITC Garamond Std Condensed: its OS/2 `sxHeight` (0.2202) and
+/// `sCapHeight` (0.3057) are both obviously wrong against its measured
+/// outlines. `XHEIGHT_EM_GARAMOND_COND` below is outline-measured (the `x`
+/// glyph's bounding box) instead — do not "correct" it back to the table
+/// value.
 const XHEIGHT_EM_INTER: f32 = 0.5459;
 const XHEIGHT_EM_LITERATA: f32 = 0.5070;
 const XHEIGHT_EM_JETBRAINS: f32 = 0.5300;
+const XHEIGHT_EM_GARAMOND_COND: f32 = 0.4561;
+
+/// How much to scale the configured body size so the face renders at the
+/// *apparent* size the user asked for.
+///
+/// `font_size` is an apparent size, not a nominal one. Two faces at the same
+/// nominal px do not read as the same size — what the eye measures is
+/// x-height, and ITC Garamond Condensed's is 0.4561 em against Literata's
+/// 0.5070, so a straight swap renders about 10% small and sparse against the
+/// leading. Scaling by the x-height ratio makes "16" mean the same thing
+/// whichever face fills the serif slot.
+///
+/// This is the same principle `line_height` already applies: it is pinned
+/// rather than taken from the font's own metrics, so that switching typeface
+/// does not silently change the reading rhythm.
+///
+/// Returns 1.0 for every face whose nominal size is already its apparent size
+/// — i.e. everything except a local face occupying the serif slot.
+pub fn body_size_scale(font: &crate::config::EditorFont) -> f32 {
+    use crate::config::EditorFont;
+    match font {
+        EditorFont::Literata if local_serif_available() => {
+            XHEIGHT_EM_LITERATA / XHEIGHT_EM_GARAMOND_COND
+        }
+        _ => 1.0,
+    }
+}
+
+/// Inline and block code size, relative to the body face's, so a monospace
+/// span matches the surrounding prose's apparent size.
+///
+/// A monospace face at the same nominal size as a serif reads noticeably
+/// larger; the eye actually measures x-height, so the ratio that makes the
+/// two sit level is `xheight(body) / xheight(mono)`. Clamped to `0.70..=1.00`
+/// as a guard against a `Custom` face reporting a wild metric, not as a
+/// tuning knob — every real body face measured so far lands well inside it.
+pub fn code_size_ratio(body_font: &crate::config::EditorFont) -> f32 {
+    // A monospace body face sets code in the same face as the prose, so there
+    // is no optical mismatch to correct and no downshift to apply — code and
+    // body must be the same size or the document looks arbitrarily ragged.
+    if body_font.is_monospace() {
+        return 1.0;
+    }
+    let xheight_match = xheight_em(body_font) / XHEIGHT_EM_JETBRAINS;
+    (xheight_match * MONO_OPTICAL_DOWNSHIFT).clamp(0.70, 1.00)
+}
+
+/// Extra downshift applied on top of x-height parity.
+///
+/// Matching x-heights exactly still reads large for a monospace face: every
+/// character carries a full advance whether it needs one or not, so a code
+/// span puts more ink on the line than the same x-height of proportional
+/// prose. Parity is the right *starting* point — it is a measurement — but the
+/// last few percent is an optical judgement, which is why this is a separate,
+/// named factor rather than a fudge folded into the ratio above.
+///
+/// Not applied when the body face is itself monospace — see the early return
+/// in [`code_size_ratio`].
+const MONO_OPTICAL_DOWNSHIFT: f32 = 0.94;
+
+#[cfg(test)]
+mod code_size_ratio_tests {
+    use super::*;
+    use crate::config::EditorFont;
+
+    /// Mono-on-mono is the identity case: no downshift is needed when the
+    /// code face and the body face are the same font.
+    #[test]
+    fn mono_body_font_ratio_is_exactly_one() {
+        assert_eq!(code_size_ratio(&EditorFont::JetBrainsMono), 1.0);
+    }
+
+    /// The ratio must follow the measured x-heights, whichever face is
+    /// actually occupying the serif slot (local Garamond if installed, else
+    /// the embedded Literata).
+    #[test]
+    fn literata_ratio_matches_the_xheight_rule() {
+        // x-height parity is the measured starting point; the ratio then
+        // shades it down by `MONO_OPTICAL_DOWNSHIFT` because parity alone
+        // still reads heavy for a monospace face.
+        let parity = xheight_em(&EditorFont::Literata) / XHEIGHT_EM_JETBRAINS;
+        let expected = parity * MONO_OPTICAL_DOWNSHIFT;
+        assert!((code_size_ratio(&EditorFont::Literata) - expected).abs() < 0.0001);
+        assert!(
+            code_size_ratio(&EditorFont::Literata) < parity,
+            "the optical downshift must actually shrink the parity ratio"
+        );
+    }
+
+    /// Literata's x-height is smaller than JetBrains Mono's, so the mono
+    /// face must be downshifted to sit level with it — the "mono reads
+    /// larger" intent the ratio exists to correct.
+    #[test]
+    fn ratio_is_below_one_for_a_smaller_xheight_body_face() {
+        assert!(code_size_ratio(&EditorFont::Literata) < 1.0);
+    }
+
+    /// The clamp exists to guard a `Custom` face reporting a wild metric, not
+    /// as a tuning knob. `Custom` currently falls back to Inter's x-height
+    /// (inside the clamp), so this test exercises the clamp function
+    /// directly against synthetic out-of-range x-heights.
+    #[test]
+    fn clamp_holds_for_out_of_range_metrics() {
+        let ratio_from = |xheight: f32| (xheight / XHEIGHT_EM_JETBRAINS).clamp(0.70, 1.00);
+        assert_eq!(ratio_from(0.01), 0.70, "absurdly small x-height clamps low");
+        assert_eq!(ratio_from(10.0), 1.00, "absurdly large x-height clamps high");
+    }
+}
 
 /// x-height-over-em for an editor font. Custom families fall back to Inter's.
 fn xheight_em(font: &crate::config::EditorFont) -> f32 {
     use crate::config::EditorFont;
     match font {
-        EditorFont::Literata => XHEIGHT_EM_LITERATA,
+        EditorFont::Literata => {
+            if local_serif_available() {
+                XHEIGHT_EM_GARAMOND_COND
+            } else {
+                XHEIGHT_EM_LITERATA
+            }
+        }
         EditorFont::JetBrainsMono => XHEIGHT_EM_JETBRAINS,
         EditorFont::Inter | EditorFont::Custom(_) => XHEIGHT_EM_INTER,
     }
@@ -1963,21 +2344,25 @@ pub fn create_font_definitions_with_cjk_spec(
     );
 
     // Insert Literata font variants (editor body font)
+    // These four are the serif BODY slots, not "Literata" specifically: a
+    // local ITC Garamond Std Condensed takes them when installed, otherwise
+    // the embedded Literata does. See `local_font_bytes` for why that face is
+    // not committed.
     fonts.font_data.insert(
         FONT_LITERATA.to_owned(),
-        Arc::new(FontData::from_static(LITERATA_REGULAR)),
+        font_data_for_slot(LOCAL_SERIF[0], LITERATA_REGULAR),
     );
     fonts.font_data.insert(
         FONT_LITERATA_BOLD.to_owned(),
-        Arc::new(FontData::from_static(LITERATA_BOLD)),
+        font_data_for_slot(LOCAL_SERIF[1], LITERATA_BOLD),
     );
     fonts.font_data.insert(
         FONT_LITERATA_ITALIC.to_owned(),
-        Arc::new(FontData::from_static(LITERATA_ITALIC)),
+        font_data_for_slot(LOCAL_SERIF[2], LITERATA_ITALIC),
     );
     fonts.font_data.insert(
         FONT_LITERATA_BOLD_ITALIC.to_owned(),
-        Arc::new(FontData::from_static(LITERATA_BOLD_ITALIC)),
+        font_data_for_slot(LOCAL_SERIF[3], LITERATA_BOLD_ITALIC),
     );
 
     // Insert JetBrains Mono font variants
@@ -2258,21 +2643,25 @@ pub fn create_font_definitions_with_settings(
     );
 
     // Insert Literata font variants (editor body font)
+    // These four are the serif BODY slots, not "Literata" specifically: a
+    // local ITC Garamond Std Condensed takes them when installed, otherwise
+    // the embedded Literata does. See `local_font_bytes` for why that face is
+    // not committed.
     fonts.font_data.insert(
         FONT_LITERATA.to_owned(),
-        Arc::new(FontData::from_static(LITERATA_REGULAR)),
+        font_data_for_slot(LOCAL_SERIF[0], LITERATA_REGULAR),
     );
     fonts.font_data.insert(
         FONT_LITERATA_BOLD.to_owned(),
-        Arc::new(FontData::from_static(LITERATA_BOLD)),
+        font_data_for_slot(LOCAL_SERIF[1], LITERATA_BOLD),
     );
     fonts.font_data.insert(
         FONT_LITERATA_ITALIC.to_owned(),
-        Arc::new(FontData::from_static(LITERATA_ITALIC)),
+        font_data_for_slot(LOCAL_SERIF[2], LITERATA_ITALIC),
     );
     fonts.font_data.insert(
         FONT_LITERATA_BOLD_ITALIC.to_owned(),
-        Arc::new(FontData::from_static(LITERATA_BOLD_ITALIC)),
+        font_data_for_slot(LOCAL_SERIF[3], LITERATA_BOLD_ITALIC),
     );
 
     // Insert JetBrains Mono font variants
@@ -3591,3 +3980,6 @@ mod tests {
         assert!(!detection.has_any);
     }
 }
+
+
+

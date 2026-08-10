@@ -1517,7 +1517,7 @@ fn parse_inline_markdown(
                     line_height_px,
                 );
                 let code_text = &text[i + 1..i + 1 + close];
-                let code_size = font_size * typescale::CODE_SIZE_RATIO;
+                let code_size = font_size * crate::fonts::code_size_ratio(editor_font);
                 job.append(
                     code_text,
                     0.0,
@@ -3684,6 +3684,9 @@ pub struct EditableCodeBlock<'a> {
     data: &'a mut CodeBlockData,
     /// Font size for the code
     font_size: f32,
+    /// The document's body font, used to derive the code size ratio so a
+    /// monospace span matches the surrounding prose's apparent size.
+    editor_font: EditorFont,
     /// Whether dark mode is active
     dark_mode: bool,
     /// Colors for styling
@@ -3698,6 +3701,7 @@ impl<'a> EditableCodeBlock<'a> {
         Self {
             data,
             font_size: 14.0,
+            editor_font: EditorFont::default(),
             dark_mode: false,
             colors: None,
             id: None,
@@ -3708,6 +3712,13 @@ impl<'a> EditableCodeBlock<'a> {
     #[must_use]
     pub fn font_size(mut self, size: f32) -> Self {
         self.font_size = size;
+        self
+    }
+
+    /// Set the document's body font (see `code_size_ratio`).
+    #[must_use]
+    pub fn editor_font(mut self, font: EditorFont) -> Self {
+        self.editor_font = font;
         self
     }
 
@@ -3959,10 +3970,11 @@ impl<'a> EditableCodeBlock<'a> {
                 // perpendicular axis claim the full available height (egui's
                 // `inner_size.max(content_size)` rule) and stretch a single code block
                 // over the entire viewport, hiding subsequent fenced blocks (issue #129).
-                // Code sits at `CODE_SIZE_RATIO` of body size (a monospace face
-                // at the same nominal size as a serif reads noticeably larger)
-                // and leads looser than body to keep long lines legible.
-                let code_size = self.font_size * typescale::CODE_SIZE_RATIO;
+                // Code sits at `code_size_ratio` of body size (a monospace
+                // face at the same nominal size as a serif reads noticeably
+                // larger) and leads looser than body to keep long lines
+                // legible.
+                let code_size = self.font_size * crate::fonts::code_size_ratio(&self.editor_font);
                 let code_line_height = code_size * typescale::CODE_LINE_HEIGHT;
                 egui::ScrollArea::horizontal()
                     .id_salt(block_id.with("scroll"))

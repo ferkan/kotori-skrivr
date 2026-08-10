@@ -34,7 +34,11 @@
 /// leaving leading to the font would silently change the reading rhythm when
 /// the user switches typeface. Pinning it keeps the document stable and makes
 /// the user's `line_height` setting mean the same thing everywhere.
-pub const DEFAULT_BODY_LINE_HEIGHT: f32 = 1.4;
+///
+/// Raised from 1.4 alongside the serif body face: at 1.4 the rows read
+/// cramped once the page was set in a text serif. Adjustable in
+/// Settings → Editor → Line Height.
+pub const DEFAULT_BODY_LINE_HEIGHT: f32 = 1.6;
 
 /// Allowed range for the user's line-height setting.
 pub const MIN_LINE_HEIGHT: f32 = 1.1;
@@ -46,12 +50,6 @@ pub const HEADING_LINE_HEIGHT: f32 = 1.2;
 
 /// Line-height multiplier inside fenced code blocks.
 pub const CODE_LINE_HEIGHT: f32 = 1.45;
-
-/// Inline and block code size, relative to body.
-///
-/// A monospace face at the same nominal size as a serif reads noticeably
-/// larger; the downshift makes the two sit level.
-pub const CODE_SIZE_RATIO: f32 = 0.92;
 
 /// Size of a heading level relative to the body size.
 ///
@@ -194,8 +192,17 @@ mod tests {
         assert_eq!(px(heading_size_ratio(4)), 18);
         assert_eq!(px(heading_size_ratio(5)), 16);
         assert_eq!(px(heading_size_ratio(6)), 14);
-        assert_eq!(px(CODE_SIZE_RATIO), 15);
-        assert_eq!(px(DEFAULT_BODY_LINE_HEIGHT), 22);
+        // Code size now follows the body face's x-height
+        // (`fonts::code_size_ratio`), not a single constant here. Pin it for
+        // JetBrains Mono as the body font, where the ratio is exactly 1.0.
+        assert_eq!(
+            px(crate::fonts::code_size_ratio(
+                &crate::config::EditorFont::JetBrainsMono
+            )),
+            16
+        );
+        // 16 × 1.6 leading. Was 22 at the previous 1.4 default.
+        assert_eq!(px(DEFAULT_BODY_LINE_HEIGHT), 26);
     }
 }
 

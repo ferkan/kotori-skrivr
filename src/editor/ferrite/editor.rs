@@ -49,6 +49,30 @@ const DEFAULT_FONT_SIZE: f32 = 14.0;
 /// This provides consistent vertical spacing regardless of font metrics.
 const FIXED_LINE_HEIGHT: f32 = 20.0;
 
+/// Per-line row geometry computed once by `FerriteEditor::livemd_styled_segments`
+/// and threaded through the render loop, so the galley's `first_row_min_height`,
+/// the gutter's baseline recording, and the em-box centring offset (item 2 of
+/// the line-box geometry fix) all agree on the same row height.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LivemdLineMetrics {
+    /// This line's heading level, if any (`InlineStyle::heading` off the
+    /// scanned spans), used for block spacing above headings.
+    pub heading_level: Option<u8>,
+    /// The row's intended height in pixels — passed to
+    /// `LineCache::get_galley_styled` as `first_row_min_height` so a blank
+    /// line (zero spans) still lays out at exactly this height.
+    pub line_height_px: f32,
+    /// Vertical offset to paint this line's galley at, so its em box is
+    /// centred in the row instead of sitting flush against the top. See
+    /// `fonts::text_top_offset`.
+    pub top_offset: f32,
+    /// The vertical extent of this line's glyphs, excluding leading. The
+    /// caret is sized from this rather than from the row, so it marks the
+    /// text instead of the row's leading — which differs per line once
+    /// headings and inline code inflate their rows.
+    pub em_box_px: f32,
+}
+
 /// A search match with pre-computed metadata for efficient rendering.
 ///
 /// Pre-computing the line number avoids O(n) string iteration on every frame.
@@ -1458,6 +1482,16 @@ impl FerriteEditor {
         // Calculate font based on font_family setting and use fixed line height for base calculations
         let font_family = fonts::get_base_font_family(&self.font_family);
         let font_id = FontId::new(self.font_size, font_family);
+        // Vertical offset (item 2 of the line-box geometry fix) for every
+        // non-livemd galley branch below, all of which share this one body
+        // font/size. Live-markdown lines get their own per-line offset from
+        // `livemd_styled_segments` instead, since headings and fenced code
+        // scale the row's font/size differently.
+        let body_top_offset = fonts::text_top_offset(
+            &self.font_family,
+            self.font_size,
+            self.font_size * self.line_height,
+        );
         let base_line_height = FIXED_LINE_HEIGHT;
         self.view.set_line_height(base_line_height);
         self.view.update_viewport(available_size.y);
@@ -1664,6 +1698,42 @@ impl FerriteEditor {
             line_y_positions.push(row_top + self.view.get_line_space_above(line_idx));
         }
 
+        // Fenced code band: a filled rect across the text column for every
+        // visible fenced line, so the code tint reads as one continuous block
+        // instead of a per-span background that stops ragged wherever each
+        // line's text happens to end. Reuses the exact row geometry the
+        // active-row tint below computes (row top backed out via
+        // `get_line_space_above`, row height from `get_line_height`), just
+        // starting at `text_start_x` instead of `gutter_origin_x` so the band
+        // does not run under the gutter. Painted first so a focused line
+        // inside a fence still shows the active-row tint on top of it. The
+        // block context is the same per-line cache `livemd_styled_segments`
+        // reads below -- this does not re-scan it.
+        if self.live_markdown_enabled {
+            let code_bg = ui.visuals().code_bg_color;
+            for (i, line_idx) in (start_line..end_line).enumerate() {
+                if self.fold_state.is_line_hidden(line_idx) {
+                    continue;
+                }
+                let in_fence = matches!(
+                    self.livemd_block_context_for(line_idx),
+                    super::livemd::BlockContext::FenceBody
+                        | super::livemd::BlockContext::FenceDelimiter
+                );
+                if !in_fence {
+                    continue;
+                }
+                let space_above = self.view.get_line_space_above(line_idx);
+                let row_y = line_y_positions[i] - space_above;
+                let row_height = self.view.get_line_height(line_idx);
+                let band_rect = egui::Rect::from_min_size(
+                    egui::Pos2::new(text_start_x, row_y),
+                    Vec2::new(effective_wrap_width, row_height),
+                );
+                painter.rect_filled(band_rect, 0.0, code_bg);
+            }
+        }
+
         // Active row tint: a subtle band behind the primary cursor's logical
         // line, so the gutter and the text read as one row. Drawn before any
         // line text or the selection overlay so both stay legible on top.
@@ -1691,6 +1761,29 @@ impl FerriteEditor {
                 painter.rect_filled(row_rect, 0.0, ui.visuals().faint_bg_color);
             }
         }
+
+        // Line numbers are painted in a second pass, once every visible
+        // line's galley has actually been drawn. Predicting a row's baseline
+        // from `ascent * font_size` only holds when every span in the row
+        // shares the row's line height; an inline-code span raises
+        // `max_row_height` above the body line's own `line_height` (see
+        // `fonts::inline_code_line_height`), which drops the whole row's
+        // glyphs lower than the prediction accounts for. So instead we read
+        // `galley.rows[0].glyphs[0].pos.y` — the baseline epaint actually
+        // used — from whichever galley variant ends up painted for that
+        // line. `None` means the row had no glyphs (a blank line), handled
+        // in the second pass by falling back to the ascent-based formula,
+        // which is exact when there is nothing to raise `max_row_height`.
+        let mut gutter_rows: Vec<(usize, f32, Option<f32>)> =
+            Vec::with_capacity(end_line.saturating_sub(start_line));
+        let (line_num_x, line_num_width) = if self.show_fold_indicators {
+            (
+                gutter_origin_x + gutter::FOLD_INDICATOR_WIDTH,
+                gutter_width - gutter::FOLD_INDICATOR_WIDTH - 4.0,
+            )
+        } else {
+            (gutter_origin_x, gutter_width - 4.0)
+        };
 
         for (i, line_idx) in (start_line..end_line).enumerate() {
             let y = line_y_positions[i];
@@ -1725,69 +1818,69 @@ impl FerriteEditor {
                 }
             }
 
-            // Render line number in gutter (only once per logical line)
-            // Line numbers are right-aligned, offset by fold indicator width if fold indicators are shown
-            if self.show_line_numbers {
-                let line_num_x = if self.show_fold_indicators {
-                    gutter_origin_x + gutter::FOLD_INDICATOR_WIDTH
-                } else {
-                    gutter_origin_x
-                };
-                let line_num_width = if self.show_fold_indicators {
-                    gutter_width - gutter::FOLD_INDICATOR_WIDTH - 4.0
-                } else {
-                    gutter_width - 4.0
-                };
-                // Centre against the first visual row, not the whole logical
-                // line: a heading row is much taller than the numeral, and a
-                // wrapped line must anchor beside its opening text.
-                let first_row_height = {
-                    let text_height = self.view.get_line_height(line_idx)
-                        - self.view.get_line_space_above(line_idx);
-                    let rows = self.view.get_visual_rows(line_idx).max(1) as f32;
-                    text_height / rows
-                };
-                gutter::render_line_number(
-                    &painter,
-                    line_idx,
-                    line_num_x,
-                    y,
-                    line_num_width,
-                    first_row_height,
-                    &gutter_font_id,
-                    gutter_text_color,
-                );
-            }
+            // Fetched once per line: the gutter needs `heading_level` to size
+            // the numeral's baseline offset (headings scale `line_font_size`),
+            // and the text-render block below needs the line content anyway.
+            // Both share this single buffer lookup and, when live markdown is
+            // on, the single `livemd_styled_segments` scan — this runs on the
+            // per-frame render path, so scanning twice per visible line is
+            // not an option.
+            let line_content = self.buffer.get_line(line_idx);
+            // Live inline markdown mode (see `.claude/skills/livemd/SKILL.md`):
+            // computed once here (not duplicated per wrap branch) and reused
+            // both for cache registration and for the actual galley below.
+            // `None` when live mode is off, so the two syntax-gated branches
+            // below fall through to their original behavior unchanged.
+            let livemd_data = if self.live_markdown_enabled {
+                line_content.as_deref().map(|line_content| {
+                    let display_content = line_content.trim_end_matches(['\r', '\n']);
+                    self.livemd_styled_segments(
+                        line_idx,
+                        display_content,
+                        text_color,
+                        ui.visuals().code_bg_color,
+                    )
+                })
+            } else {
+                None
+            };
+            let heading_level = livemd_data
+                .as_ref()
+                .and_then(|(_, _, m)| m.heading_level);
+            // Item 2 of the line-box geometry fix: centres this line's em box
+            // in its row. Live-markdown lines carry their own (heading/fence
+            // aware) offset from `livemd_styled_segments`; every other branch
+            // shares the one body font/size computed once above the loop.
+            let top_offset = livemd_data
+                .as_ref()
+                .map(|(_, _, m)| m.top_offset)
+                .unwrap_or(body_top_offset);
+            // Fenced-code lines already get a full-width band elsewhere and
+            // must not also get per-span inline-code chips (item 3).
+            let in_fence_line = matches!(
+                self.livemd_block_context_for(line_idx),
+                super::livemd::BlockContext::FenceBody
+                    | super::livemd::BlockContext::FenceDelimiter
+            );
 
             // Render line content
-            if let Some(line_content) = self.buffer.get_line(line_idx) {
+            if let Some(line_content) = line_content.as_deref() {
                 let display_content = line_content.trim_end_matches(['\r', '\n']);
 
                 // Check if syntax highlighting is enabled for this line
                 let use_syntax = self.syntax_enabled && self.syntax_language.is_some();
 
-                // Live inline markdown mode (see `.claude/skills/livemd/SKILL.md`):
-                // computed once here (not duplicated per wrap branch) and reused
-                // both for cache registration and for the actual galley below.
-                // `None` when live mode is off, so the two syntax-gated branches
-                // below fall through to their original behavior unchanged.
-                let livemd_data = if self.live_markdown_enabled {
-                    Some(self.livemd_styled_segments(line_idx, display_content, text_color))
-                } else {
-                    None
-                };
-
                 // Block spacing above headings (live markdown only).
-                let heading_level = livemd_data.as_ref().and_then(|(_, _, level)| *level);
                 let space_above = Self::livemd_space_above(heading_level, line_idx, self.font_size);
 
                 // Track this line's key so invalidate_range can evict it later.
-                if let Some((revealed, segments, _)) = &livemd_data {
+                if let Some((revealed, segments, m)) = &livemd_data {
                     self.line_cache.register_line_styled(
                         line_idx,
                         display_content,
                         *revealed,
                         segments,
+                        m.line_height_px,
                         if effective_wrap_enabled {
                             Some(effective_wrap_width)
                         } else {
@@ -1800,7 +1893,7 @@ impl FerriteEditor {
                 }
 
                 if effective_wrap_enabled {
-                    let galley = if let Some((revealed, segments, _)) = &livemd_data {
+                    let galley = if let Some((revealed, segments, m)) = &livemd_data {
                         // Live markdown, wrapped: styled spans instead of
                         // syntect segments. Wires the "wrapped+syntax" slot
                         // per the contract (this slot is mutually exclusive
@@ -1810,6 +1903,7 @@ impl FerriteEditor {
                             display_content,
                             *revealed,
                             segments,
+                            m.line_height_px,
                             &painter,
                             Some(effective_wrap_width),
                         )
@@ -1858,19 +1952,37 @@ impl FerriteEditor {
                     self.view
                         .set_line_wrap_info(line_idx, visual_rows, height, space_above);
 
+                    if self.show_line_numbers {
+                        gutter_rows.push((
+                            line_idx,
+                            y + top_offset,
+                            gutter::first_glyph_baseline(&galley),
+                        ));
+                    }
+
                     // Draw the wrapped galley
-                    painter.galley(egui::Pos2::new(text_start_x, y), galley, text_color);
+                    let paint_pos = egui::Pos2::new(text_start_x, y + top_offset);
+                    if livemd_data.is_some() && !in_fence_line {
+                        text_render::paint_inline_code_chips(
+                            &painter,
+                            paint_pos,
+                            &galley,
+                            ui.visuals().code_bg_color,
+                        );
+                    }
+                    painter.galley(paint_pos, galley, text_color);
                 } else {
                     // Apply horizontal scroll offset for non-wrapped mode
                     let x = text_start_x - self.view.horizontal_scroll();
 
-                    if let Some((revealed, segments, _)) = &livemd_data {
+                    if let Some((revealed, segments, m)) = &livemd_data {
                         // Live markdown, unwrapped: wires the
                         // "unwrapped+syntax" slot per the contract.
                         let galley = self.line_cache.get_galley_styled(
                             display_content,
                             *revealed,
                             segments,
+                            m.line_height_px,
                             &painter,
                             None,
                         );
@@ -1889,7 +2001,23 @@ impl FerriteEditor {
                             galley.size().y + space_above,
                             space_above,
                         );
-                        painter.galley(egui::Pos2::new(x, y), galley, text_color);
+                        if self.show_line_numbers {
+                            gutter_rows.push((
+                                line_idx,
+                                y + top_offset,
+                                gutter::first_glyph_baseline(&galley),
+                            ));
+                        }
+                        let paint_pos = egui::Pos2::new(x, y + top_offset);
+                        if !in_fence_line {
+                            text_render::paint_inline_code_chips(
+                                &painter,
+                                paint_pos,
+                                &galley,
+                                ui.visuals().code_bg_color,
+                            );
+                        }
+                        painter.galley(paint_pos, galley, text_color);
                     } else if use_syntax {
                         // Syntax-highlighted non-wrapped galley
                         // Check cache first to avoid expensive highlighting on every frame
@@ -1917,16 +2045,30 @@ impl FerriteEditor {
                         };
                         // Track max line width for horizontal scrollbar
                         max_line_width = max_line_width.max(galley.size().x);
-                        painter.galley(egui::Pos2::new(x, y), galley, text_color);
+                        if self.show_line_numbers {
+                            gutter_rows.push((
+                                line_idx,
+                                y + top_offset,
+                                gutter::first_glyph_baseline(&galley),
+                            ));
+                        }
+                        painter.galley(egui::Pos2::new(x, y + top_offset), galley, text_color);
                     } else if let Some(shaped) = self.line_cache.get_shaped_line(
                         display_content,
                         &painter,
                         font_id.clone(),
                         text_color,
                     ) {
+                        if self.show_line_numbers {
+                            let baseline = shaped
+                                .clusters
+                                .first()
+                                .and_then(|cg| gutter::first_glyph_baseline(&cg.galley));
+                            gutter_rows.push((line_idx, y + top_offset, baseline));
+                        }
                         for cg in &shaped.clusters {
                             painter.galley(
-                                egui::Pos2::new(x + cg.x_offset, y),
+                                egui::Pos2::new(x + cg.x_offset, y + top_offset),
                                 Arc::clone(&cg.galley),
                                 text_color,
                             );
@@ -1937,15 +2079,63 @@ impl FerriteEditor {
                         let galley = text_render::render_line(
                             &painter,
                             &mut self.line_cache,
-                            &line_content,
+                            line_content,
                             x,
-                            y,
+                            y + top_offset,
                             font_id.clone(),
                             text_color,
                         );
+                        if self.show_line_numbers {
+                            gutter_rows.push((
+                                line_idx,
+                                y + top_offset,
+                                gutter::first_glyph_baseline(&galley),
+                            ));
+                        }
                         max_line_width = max_line_width.max(galley.size().x);
                     }
                 }
+            } else if self.show_line_numbers {
+                // No content for this line index (shouldn't normally happen
+                // within `total_lines`) — still record it so the number is
+                // painted, via the blank-line fallback in the second pass.
+                gutter_rows.push((line_idx, y + top_offset, None));
+            }
+        }
+
+        // Second pass: paint line numbers now that every visible line's
+        // galley has been drawn and its real baseline recorded above. `y`
+        // here already carries the item-2 em-box-centring offset (see
+        // `top_offset` above) — every push into `gutter_rows` stored
+        // `y + top_offset`, not the raw row top, or the numeral would drift
+        // by exactly that offset relative to the (now-shifted) text
+        // baseline. A blank line (`baseline_from_top == None`) has no
+        // glyphs to read a baseline from, so it falls back to the
+        // ascent-based prediction, which is exact when there is nothing to
+        // raise `max_row_height`.
+        if self.show_line_numbers {
+            for (line_idx, y, baseline_from_top) in gutter_rows {
+                let baseline_offset = match baseline_from_top {
+                    Some(text_baseline) => {
+                        text_baseline - fonts::ascent_em_jetbrains() * gutter_font_id.size
+                    }
+                    None => gutter::line_number_baseline_offset(
+                        fonts::ascent_em(&self.font_family),
+                        self.font_size,
+                        fonts::ascent_em_jetbrains(),
+                        gutter_font_id.size,
+                    ),
+                };
+                gutter::render_line_number(
+                    &painter,
+                    line_idx,
+                    line_num_x,
+                    y,
+                    line_num_width,
+                    baseline_offset,
+                    &gutter_font_id,
+                    gutter_text_color,
+                );
             }
         }
 
@@ -2091,6 +2281,10 @@ impl FerriteEditor {
                         effective_wrap_width,
                         cursor_color,
                         self.cursor_visible,
+                        Some((
+                            body_top_offset,
+                            fonts::em_box_px(&self.font_family, self.font_size),
+                        )),
                     );
                 }
 
@@ -3316,9 +3510,11 @@ impl FerriteEditor {
     /// omitted entirely (`LineMap::from_spans` already dropped them from the
     /// display string, so we only need to walk `Text` spans that survive).
     ///
-    /// Also returns the line's heading level, if any (`style.heading` off the
-    /// scanned spans -- the render loop uses this for block spacing above
-    /// headings without re-parsing the line).
+    /// Also returns [`LivemdLineMetrics`], computed here rather than
+    /// re-derived by the render loop, so the heading level, the row's own
+    /// `line_height_px` (used for `first_row_min_height` and cache-key
+    /// stability), and the item-2 vertical centring offset all agree with
+    /// what this function actually built the spans against.
     ///
     /// Leading (`TextFormat::line_height`) is decided once for the whole
     /// LINE here, never per span -- a prose line containing inline code must
@@ -3330,7 +3526,12 @@ impl FerriteEditor {
         line_idx: usize,
         source_line: &str,
         body_color: Color32,
-    ) -> (bool, Vec<super::line_cache::StyledSegment>, Option<u8>) {
+        code_bg: Color32,
+    ) -> (
+        bool,
+        Vec<super::line_cache::StyledSegment>,
+        LivemdLineMetrics,
+    ) {
         use super::livemd::{style, SpanRole};
 
         let revealed = self.livemd_line_revealed(line_idx);
@@ -3345,22 +3546,39 @@ impl FerriteEditor {
             super::livemd::BlockContext::FenceBody | super::livemd::BlockContext::FenceDelimiter
         );
 
-        let line_height_px = match heading_level {
+        // The font and size that dominate this row, paired with the same
+        // `line_height_px` branch below -- used both for `first_row_min_height`
+        // and for centring the em box in the row (item 2).
+        let (top_offset_font, line_font_size, line_height_px) = match heading_level {
             Some(level) => {
-                self.font_size
-                    * crate::theme::typescale::heading_size_ratio(level)
-                    * crate::theme::typescale::HEADING_LINE_HEIGHT
+                let size = self.font_size * crate::theme::typescale::heading_size_ratio(level);
+                (
+                    self.font_family.clone(),
+                    size,
+                    size * crate::theme::typescale::HEADING_LINE_HEIGHT,
+                )
             }
-            None if matches!(
-                ctx,
-                super::livemd::BlockContext::FenceBody | super::livemd::BlockContext::FenceDelimiter
-            ) =>
-            {
-                self.font_size
-                    * crate::theme::typescale::CODE_SIZE_RATIO
-                    * crate::theme::typescale::CODE_LINE_HEIGHT
+            None if in_fence => {
+                let size = self.font_size * crate::fonts::code_size_ratio(&self.font_family);
+                (
+                    crate::config::EditorFont::JetBrainsMono,
+                    size,
+                    size * crate::theme::typescale::CODE_LINE_HEIGHT,
+                )
             }
-            None => self.font_size * self.line_height,
+            None => (
+                self.font_family.clone(),
+                self.font_size,
+                self.font_size * self.line_height,
+            ),
+        };
+        let top_offset =
+            crate::fonts::text_top_offset(&top_offset_font, line_font_size, line_height_px);
+        let metrics = LivemdLineMetrics {
+            heading_level,
+            line_height_px,
+            top_offset,
+            em_box_px: crate::fonts::em_box_px(&top_offset_font, line_font_size),
         };
 
         let mut segments = Vec::with_capacity(spans.len());
@@ -3379,6 +3597,7 @@ impl FerriteEditor {
                         &self.font_family,
                         self.font_size,
                         body_color,
+                        code_bg,
                         line_height_px,
                         in_fence,
                     );
@@ -3393,6 +3612,7 @@ impl FerriteEditor {
                         &self.font_family,
                         self.font_size,
                         body_color,
+                        code_bg,
                         line_height_px,
                         in_fence,
                     );
@@ -3404,7 +3624,7 @@ impl FerriteEditor {
             }
         }
 
-        (revealed, segments, heading_level)
+        (revealed, segments, metrics)
     }
 
     /// Blank space to render above a live-markdown line, in pixels.
@@ -3529,7 +3749,14 @@ impl FerriteEditor {
         let disp_byte = map.to_display(src_byte);
         let disp_col = super::livemd::byte_to_char(map.display_string(), disp_byte);
 
-        let (_, segments, _) = self.livemd_styled_segments(cursor.line, source_line, Color32::WHITE);
+        // This path only wants cursor mapping (segment text/lengths), not
+        // colours -- neither `body_color` nor `code_bg` is ever painted here.
+        let (_, segments, metrics) = self.livemd_styled_segments(
+            cursor.line,
+            source_line,
+            Color32::WHITE,
+            Color32::TRANSPARENT,
+        );
         let char_count: usize = segments.iter().map(|s| s.text.chars().count()).sum();
         let cursor_col = disp_col.min(char_count);
 
@@ -3552,17 +3779,26 @@ impl FerriteEditor {
         let ccursor = egui::text::CCursor::new(cursor_col);
         let cursor_rect = galley.pos_from_cursor(ccursor);
 
+        // The caret marks the text, so it is sized and placed from this
+        // line's own glyph extent — not from `base_line_height`, a single
+        // global value that is wrong on every heading row and on every row
+        // inflated by inline code. `top_offset` is the same shift the galley
+        // is painted with, so the caret tracks the text rather than sitting
+        // above it and hanging below.
+        let caret_top = line_top_y + metrics.top_offset;
+        let caret_height = metrics.em_box_px;
+
         if wrap_active {
             (
                 text_start_x + cursor_rect.min.x,
-                line_top_y + cursor_rect.min.y,
-                cursor_rect.height().max(base_line_height),
+                caret_top + cursor_rect.min.y,
+                caret_height,
             )
         } else {
             (
                 text_start_x + cursor_rect.min.x - self.view.horizontal_scroll(),
-                line_top_y,
-                base_line_height,
+                caret_top,
+                caret_height,
             )
         }
     }

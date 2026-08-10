@@ -3,18 +3,22 @@
 
 use eframe::egui::Color32;
 
-/// Default accent — a terracotta that works on both the warm paper and warm
-/// charcoal grounds.
+/// Default accent — Kotori green, `oklch(39.14% 0.1014 145.58)` = `#185320`.
 ///
 /// A single value has to serve both themes, because [`ThemeColors::apply_user_accent`]
-/// applies the user's one choice to whichever theme is active. Measured:
-/// 4.23:1 on the light background, 3.87:1 on the dark one — both clear the 3:1
-/// floor for UI components, and [`readable_on`] lifts it further where it is
-/// used as document text.
+/// applies the user's one choice to whichever theme is active. This one is
+/// deep: 8.69:1 on the light page, but only **1.88:1** on the warm charcoal
+/// ground, far below the 3:1 floor for UI components. On dark chrome the raw
+/// value would be all but invisible as a heading colour or a selected fill.
 ///
-/// The previous value was a cool blue tuned for dark chrome; on a light page it
-/// measured 2.2:1 as a heading colour.
-pub const DEFAULT_ACCENT_RGB: [u8; 3] = [188, 92, 54];
+/// [`for_ground`] therefore lifts any too-dark accent toward its ground until
+/// it clears the floor, so the brand colour is used exactly as specified on
+/// light and legibly on dark. That adaptation is not special-cased to this
+/// value — user-chosen accents are unconstrained and hit the same problem.
+///
+/// The value before this was a terracotta (4.23:1 / 3.87:1); before that, a
+/// cool blue tuned for dark chrome that measured 2.2:1 on a light page.
+pub const DEFAULT_ACCENT_RGB: [u8; 3] = [24, 83, 32];
 
 #[inline]
 pub fn default_accent() -> Color32 {
@@ -90,6 +94,13 @@ const ON_ACCENT_LIGHT: Color32 = Color32::from_rgb(250, 250, 250);
 
 /// WCAG AA floor for body text.
 pub const MIN_TEXT_CONTRAST: f32 = 4.5;
+
+/// WCAG floor for non-text UI components — borders, fills, indicators.
+///
+/// Lower than [`MIN_TEXT_CONTRAST`] on purpose: chrome painted *in* the accent
+/// only has to be discernible against its ground, whereas an accent used as
+/// document text has to be comfortably readable.
+pub const MIN_UI_CONTRAST: f32 = 3.0;
 
 /// Darken or lighten `color` until it reaches `min_ratio` against `background`,
 /// keeping as much of the original hue as possible.
@@ -247,18 +258,43 @@ mod tests {
         assert!(fixed.b() > fixed.r(), "hue should be preserved");
     }
 
-    /// The shipped default must already be usable as heading text on both
-    /// grounds without correction doing heavy lifting.
+    /// The shipped default must be usable on both grounds — as heading text
+    /// after `readable_on`, and as chrome after the ground correction that
+    /// `ThemeColors::apply_user_accent` applies.
+    ///
+    /// This used to additionally require the *raw* default to clear 3:1 on
+    /// both grounds unaided. Kotori green (`oklch(39.14% .1014 145.58)`)
+    /// cannot: it measures 8.69:1 on the warm page but 1.88:1 on the warm
+    /// charcoal. A brand colour is a fixed input, so the correction — not the
+    /// colour — is what has to carry it, and that correction is now applied to
+    /// chrome as well as to document text. What must still hold is that the
+    /// accent is legible in both themes *after* the pipeline runs, which is
+    /// what this asserts.
     #[test]
     fn default_accent_is_usable_on_both_page_grounds() {
         for page in [Color32::from_rgb(251, 249, 245), Color32::from_rgb(28, 27, 25)] {
             let heading = readable_on(default_accent(), page, MIN_TEXT_CONTRAST);
             assert!(contrast_ratio(heading, page) >= MIN_TEXT_CONTRAST);
+
+            let chrome = readable_on(default_accent(), page, MIN_UI_CONTRAST);
             assert!(
-                contrast_ratio(default_accent(), page) >= 3.0,
-                "the accent itself should clear the UI-component floor on {page:?}"
+                contrast_ratio(chrome, page) >= MIN_UI_CONTRAST,
+                "corrected accent {chrome:?} still below the UI floor on {page:?}"
             );
         }
+    }
+
+    /// The correction must preserve the brand colour exactly wherever it
+    /// already clears the floor — the light page is the ground Kotori green
+    /// was picked against, and it must arrive there untouched.
+    #[test]
+    fn default_accent_is_untouched_on_the_ground_it_clears() {
+        let page = Color32::from_rgb(251, 249, 245);
+        assert_eq!(
+            readable_on(default_accent(), page, MIN_UI_CONTRAST),
+            default_accent(),
+            "the brand colour must not be adjusted on a ground it already clears"
+        );
     }
 
     /// An accent that already reads well must be returned untouched, so this
