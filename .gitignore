@@ -148,3 +148,7 @@ assets/fonts/PPMori-*.otf
 # ITC Garamond Std is a commercial Monotype/ITC retail font, not a personal-use
 # freebie, so the same reasoning applies even more strongly.
 assets/fonts/ITCGaramondStd-*.ttf
+# Suffix Serif is a licensed commercial family, currently the local face for
+# the serif body slot (see `LOCAL_SERIF` in src/fonts.rs). Local builds pick it
+# up from disk; a fresh clone falls back to the embedded Literata.
+assets/fonts/Suffix Serif *.otf

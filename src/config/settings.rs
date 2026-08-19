@@ -1550,10 +1550,10 @@ impl EditorFont {
     /// Get the display name for the font.
     pub fn display_name(&self) -> String {
         match self {
-            // This variant names the serif BODY slot. A local ITC Garamond
-            // Condensed takes that slot when installed, so report the face
-            // actually in use rather than claiming Literata while rendering
-            // something else.
+            // This variant names the serif BODY slot. A local Suffix Serif
+            // takes that slot when installed, so report the face actually in
+            // use rather than claiming Literata while rendering something
+            // else.
             EditorFont::Literata => crate::fonts::active_serif_name().to_string(),
             EditorFont::Inter => "Inter".to_string(),
             EditorFont::JetBrainsMono => "JetBrains Mono".to_string(),

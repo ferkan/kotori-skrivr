@@ -975,14 +975,18 @@ const FONT_PHOSPHOR: &str = "phosphor";
 const ASCENT_EM_INTER: f32 = 0.9688;
 const ASCENT_EM_LITERATA: f32 = 1.1770;
 const ASCENT_EM_JETBRAINS: f32 = 1.0200;
-/// ITC Garamond Std Condensed's ascent (hhea) is far shallower than
-/// Literata's — 0.7031 against 1.1770, which is 7.6 px at a 16 px body.
-/// Baseline corrections derived from the wrong value put inline code a
-/// visible distance off, and send the checkbox nudge in the opposite
-/// direction, so this must follow whichever face is actually loaded into the
-/// slot. This is the `hhea` ascent, which is what the rasterizer actually
-/// places the baseline against, not a normalized typographic value.
-const ASCENT_EM_GARAMOND_COND: f32 = 0.7031;
+/// Suffix Serif's ascent (hhea) is shallower than Literata's — 0.9833
+/// against 1.1770, which is 3.1 px at a 16 px body. Baseline corrections
+/// derived from the wrong value put inline code a visible distance off, and
+/// send the checkbox nudge in the opposite direction, so this must follow
+/// whichever face is actually loaded into the slot. This is the `hhea`
+/// ascent, which is what the rasterizer actually places the baseline
+/// against, not a normalized typographic value.
+///
+/// Taken from `Suffix Serif Regular.otf`. The family's other cuts vary
+/// slightly (Semibold is 0.9883); the slot carries one value and regular is
+/// the face that sets the body's rhythm.
+const ASCENT_EM_SUFFIX: f32 = 0.9833;
 
 /// Ascent-over-em for the gutter's monospace face (JetBrains Mono), for
 /// callers that need to align a numeral's baseline against body text set in
@@ -1004,7 +1008,7 @@ pub fn ascent_em(font: &crate::config::EditorFont) -> f32 {
         // takes the slot when installed (see `local_font_bytes`).
         EditorFont::Literata => {
             if local_serif_available() {
-                ASCENT_EM_GARAMOND_COND
+                ASCENT_EM_SUFFIX
             } else {
                 ASCENT_EM_LITERATA
             }
@@ -1022,7 +1026,7 @@ pub fn ascent_em(font: &crate::config::EditorFont) -> f32 {
 const DESCENT_EM_INTER: f32 = 0.2412;
 const DESCENT_EM_LITERATA: f32 = 0.3080;
 const DESCENT_EM_JETBRAINS: f32 = 0.3000;
-const DESCENT_EM_GARAMOND_COND: f32 = 0.2969;
+const DESCENT_EM_SUFFIX: f32 = 0.2958;
 
 /// Descent-over-em for an editor font. See [`ascent_em`] for the fallback
 /// rationale (`Custom` resolves to Inter's value).
@@ -1031,7 +1035,7 @@ pub fn descent_em(font: &crate::config::EditorFont) -> f32 {
     match font {
         EditorFont::Literata => {
             if local_serif_available() {
-                DESCENT_EM_GARAMOND_COND
+                DESCENT_EM_SUFFIX
             } else {
                 DESCENT_EM_LITERATA
             }
@@ -1188,7 +1192,7 @@ mod baseline_metric_tests {
         let nominal = 16.0_f32;
 
         if super::local_serif_available() {
-            let swapped = nominal * scale * super::XHEIGHT_EM_GARAMOND_COND;
+            let swapped = nominal * scale * super::XHEIGHT_EM_SUFFIX;
             let baseline = nominal * super::XHEIGHT_EM_LITERATA;
             assert!(
                 (swapped - baseline).abs() < 0.01,
@@ -1228,7 +1232,7 @@ mod baseline_metric_tests {
         );
 
         let expected = if local_serif_available() {
-            DESCENT_EM_GARAMOND_COND
+            DESCENT_EM_SUFFIX
         } else {
             DESCENT_EM_LITERATA
         };
@@ -1246,8 +1250,8 @@ mod baseline_metric_tests {
     ///   knob that can move independently of this guard.
     /// - The em box comes from the raw Literata constants, not
     ///   `text_top_offset(&EditorFont::Literata, ..)`: that goes through the
-    ///   serif *slot*, which this dev checkout may have a local Garamond
-    ///   installed into (see `local_serif_available`), and the claim under
+    ///   serif *slot*, which this dev checkout may have a local Suffix
+    ///   Serif installed into (see `local_serif_available`), and the claim under
     ///   test is specifically about the embedded Literata face.
     #[test]
     fn text_top_offset_is_zero_for_literata() {
@@ -1260,11 +1264,11 @@ mod baseline_metric_tests {
         }
     }
 
-    /// The Garamond case this offset exists for: its 1.000 em box is
-    /// narrower than the row, so the local serif slot (when installed) must
-    /// get a positive, centring offset.
+    /// The case this offset exists for: the local serif's 1.279 em box is
+    /// narrower than the row, so the serif slot (when installed) must get a
+    /// positive, centring offset.
     #[test]
-    fn text_top_offset_is_positive_for_garamond_when_installed() {
+    fn text_top_offset_is_positive_for_local_serif_when_installed() {
         if !local_serif_available() {
             return;
         }
@@ -1281,22 +1285,23 @@ mod baseline_metric_tests {
 
 /// Serif body face preferred when present locally, by weight slot.
 ///
-/// Book is ITC Garamond's text weight (regular/bold/italic/bold-italic).
-/// `ITCGaramondStd-LtCond.ttf` / `-LtCondIta.ttf` (Light) are deliberately
-/// unused here — Light is a display weight and goes thin and fragile at a
-/// 16 px body on screen.
+/// The bold slots take Suffix Serif's Semibold (600), not its Bold (800),
+/// for the same reason the embedded Literata bold is the 600 cut: a heavy
+/// serif shouts at heading sizes and breaks up inline `**bold**` paragraph
+/// texture — see `LITERATA_BOLD`. The family's Thin/Light/Medium cuts are
+/// display weights and go fragile at a 16 px body on screen.
 const LOCAL_SERIF: [&str; 4] = [
-    "ITCGaramondStd-BkCond.ttf",
-    "ITCGaramondStd-BdCond.ttf",
-    "ITCGaramondStd-BkCondIta.ttf",
-    "ITCGaramondStd-BdCondIta.ttf",
+    "Suffix Serif Regular.otf",
+    "Suffix Serif Semibold.otf",
+    "Suffix Serif Italic.otf",
+    "Suffix Serif Semibold Italic.otf",
 ];
 
 /// Read a font from `assets/fonts/` at runtime, if it is there.
 ///
-/// ITC Garamond Std is a commercial Monotype/ITC retail font, not a personal-
-/// use freebie. This repository is public and MIT-licensed, so committing it
-/// would redistribute and sub-license it beyond those terms. It is therefore
+/// Suffix Serif is a licensed commercial family. This repository is public
+/// and MIT-licensed, so committing it would redistribute and sub-license it
+/// beyond those terms. It is therefore
 /// gitignored and loaded from disk when present, with the embedded Literata
 /// as the fallback so a fresh clone still builds and looks right.
 ///
@@ -1343,7 +1348,7 @@ pub fn local_serif_available() -> bool {
 /// Name of the serif body face actually in use, for display in settings.
 pub fn active_serif_name() -> &'static str {
     if local_serif_available() {
-        "ITC Garamond Condensed"
+        "Suffix Serif"
     } else {
         "Literata"
     }
@@ -1351,24 +1356,21 @@ pub fn active_serif_name() -> &'static str {
 
 /// x-height as a fraction of em, per embedded family (OS/2 `sxHeight`).
 ///
-/// Not true of ITC Garamond Std Condensed: its OS/2 `sxHeight` (0.2202) and
-/// `sCapHeight` (0.3057) are both obviously wrong against its measured
-/// outlines. `XHEIGHT_EM_GARAMOND_COND` below is outline-measured (the `x`
-/// glyph's bounding box) instead — do not "correct" it back to the table
-/// value.
+/// `XHEIGHT_EM_SUFFIX` is the local serif slot's value. Suffix Serif's OS/2
+/// `sxHeight` (0.4167) agrees with its outline-measured `x` bounding box, so
+/// the table value is used as-is here.
 const XHEIGHT_EM_INTER: f32 = 0.5459;
 const XHEIGHT_EM_LITERATA: f32 = 0.5070;
 const XHEIGHT_EM_JETBRAINS: f32 = 0.5300;
-const XHEIGHT_EM_GARAMOND_COND: f32 = 0.4561;
+const XHEIGHT_EM_SUFFIX: f32 = 0.4167;
 
 /// How much to scale the configured body size so the face renders at the
 /// *apparent* size the user asked for.
 ///
 /// `font_size` is an apparent size, not a nominal one. Two faces at the same
 /// nominal px do not read as the same size — what the eye measures is
-/// x-height, and ITC Garamond Condensed's is 0.4561 em against Literata's
-/// 0.5070, so a straight swap renders about 10% small and sparse against the
-/// leading. Scaling by the x-height ratio makes "16" mean the same thing
+/// x-height, and Suffix Serif's is 0.4167 em against Literata's 0.5070, so a
+/// straight swap renders about 18% small and sparse against the leading. Scaling by the x-height ratio makes "16" mean the same thing
 /// whichever face fills the serif slot.
 ///
 /// This is the same principle `line_height` already applies: it is pinned
@@ -1380,9 +1382,7 @@ const XHEIGHT_EM_GARAMOND_COND: f32 = 0.4561;
 pub fn body_size_scale(font: &crate::config::EditorFont) -> f32 {
     use crate::config::EditorFont;
     match font {
-        EditorFont::Literata if local_serif_available() => {
-            XHEIGHT_EM_LITERATA / XHEIGHT_EM_GARAMOND_COND
-        }
+        EditorFont::Literata if local_serif_available() => XHEIGHT_EM_LITERATA / XHEIGHT_EM_SUFFIX,
         _ => 1.0,
     }
 }
@@ -1432,7 +1432,7 @@ mod code_size_ratio_tests {
     }
 
     /// The ratio must follow the measured x-heights, whichever face is
-    /// actually occupying the serif slot (local Garamond if installed, else
+    /// actually occupying the serif slot (local Suffix Serif if installed, else
     /// the embedded Literata).
     #[test]
     fn literata_ratio_matches_the_xheight_rule() {
@@ -1474,7 +1474,7 @@ fn xheight_em(font: &crate::config::EditorFont) -> f32 {
     match font {
         EditorFont::Literata => {
             if local_serif_available() {
-                XHEIGHT_EM_GARAMOND_COND
+                XHEIGHT_EM_SUFFIX
             } else {
                 XHEIGHT_EM_LITERATA
             }
@@ -2345,7 +2345,7 @@ pub fn create_font_definitions_with_cjk_spec(
 
     // Insert Literata font variants (editor body font)
     // These four are the serif BODY slots, not "Literata" specifically: a
-    // local ITC Garamond Std Condensed takes them when installed, otherwise
+    // local Suffix Serif takes them when installed, otherwise
     // the embedded Literata does. See `local_font_bytes` for why that face is
     // not committed.
     fonts.font_data.insert(
@@ -2644,7 +2644,7 @@ pub fn create_font_definitions_with_settings(
 
     // Insert Literata font variants (editor body font)
     // These four are the serif BODY slots, not "Literata" specifically: a
-    // local ITC Garamond Std Condensed takes them when installed, otherwise
+    // local Suffix Serif takes them when installed, otherwise
     // the embedded Literata does. See `local_font_bytes` for why that face is
     // not committed.
     fonts.font_data.insert(
