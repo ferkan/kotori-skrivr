@@ -57,6 +57,8 @@ else
 	@ls -lh target/release/skrivr 2>/dev/null || echo "Binary not found"
 endif
 
+LSREGISTER = /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+
 # Build the macOS .app and install it into /Applications, replacing the copy
 # already there.
 #
@@ -69,11 +71,17 @@ endif
 # rather than copied over because `cp -R` onto an existing bundle merges into
 # it — files dropped in the new version would linger as stale resources.
 #
-# `.metadata_never_index` keeps Spotlight, and so LaunchServices, from
-# discovering the bundle left behind in `target/`; that dev bundle carries the
-# same `se.kotori.skrivr` identifier as the installed one and would otherwise
-# compete with it for the .md/.json/.yaml/.toml associations. `cargo bundle`
-# can recreate `target/`, so it is restored here.
+# The staging bundles are then deleted. `cargo bundle` leaves two of them —
+# `bundle/osx` and `bundle/dmg` — both carrying the same `se.kotori.skrivr`
+# identifier as the installed copy, and macOS registers every `.app` it finds.
+# Three bundles claiming one identifier makes LaunchServices pick between them
+# unpredictably, which shows up as Finder refusing to open a .md file at all.
+# They are unregistered before being removed, because `lsregister -u` needs the
+# path to still exist.
+#
+# A `target/.metadata_never_index` marker does NOT prevent this: excluding the
+# tree from Spotlight leaves LaunchServices' own app scan untouched, and the
+# bundles get registered regardless. Deleting them is the only reliable fix.
 install-macos:
 ifeq ($(OS),Windows_NT)
 	@echo "install-macos is macOS-only"
@@ -82,7 +90,10 @@ else
 	cargo bundle --release
 	rm -rf "/Applications/Kotori Skrivr.app"
 	cp -R "target/release/bundle/osx/Kotori Skrivr.app" /Applications/
-	@touch target/.metadata_never_index
+	@$(LSREGISTER) -u "$(PWD)/target/release/bundle/osx/Kotori Skrivr.app" 2>/dev/null || true
+	@$(LSREGISTER) -u "$(PWD)/target/release/bundle/dmg/Kotori Skrivr.app" 2>/dev/null || true
+	@rm -rf target/release/bundle
+	@$(LSREGISTER) -f -R -trusted "/Applications/Kotori Skrivr.app"
 	@echo "Installed Kotori Skrivr $$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' '/Applications/Kotori Skrivr.app/Contents/Info.plist')"
 endif
 
