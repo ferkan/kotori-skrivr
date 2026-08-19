@@ -1467,27 +1467,37 @@ impl FerriteApp {
         Ok(())
     }
 
-    /// Handle file paths received from secondary Ferrite instances.
+    /// Handle file paths pushed at us from outside the running app.
     ///
-    /// When the user double-clicks a file in the OS while Ferrite is already running,
-    /// the second process forwards the path here via the single-instance TCP protocol.
-    /// This opens the file as a new tab and brings the window to the front.
+    /// Two sources feed this, and both mean the same thing to the user — "open
+    /// this file in the editor I already have running":
+    ///
+    /// - A secondary instance. Double-clicking a file while Ferrite runs starts
+    ///   a second process, which forwards the path over the single-instance TCP
+    ///   protocol and exits.
+    /// - macOS "Open With". Finder sends an Apple Event instead of arguments;
+    ///   `crate::platform::macos` queues the paths it carries.
+    ///
+    /// The macOS queue is polled even when there is no listener, because the
+    /// two are independent: an `'odoc'` event arrives whether or not this
+    /// process happens to hold the single-instance lock.
     pub(crate) fn handle_instance_paths(&mut self, ctx: &egui::Context) {
-        let paths = match &self.instance_listener {
-            Some(listener) => {
-                // Ensure the background accept thread can wake us up immediately.
-                // This is cheap (just an Arc clone check) when already set.
-                listener.set_repaint_ctx(ctx.clone());
-                listener.poll()
-            }
-            None => return,
-        };
+        // Let the Apple Event handler wake the frame loop. Cheap and idempotent.
+        crate::platform::set_repaint_ctx(ctx);
+        let mut paths = crate::platform::get_open_file_paths();
+
+        if let Some(listener) = &self.instance_listener {
+            // Ensure the background accept thread can wake us up immediately.
+            // This is cheap (just an Arc clone check) when already set.
+            listener.set_repaint_ctx(ctx.clone());
+            paths.extend(listener.poll());
+        }
 
         if paths.is_empty() {
             return;
         }
 
-        info!("Received {} path(s) from secondary instance", paths.len());
+        info!("Received {} path(s) from outside the app", paths.len());
 
         // Keep the normal cross-platform focus path in place.
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);

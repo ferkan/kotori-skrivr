@@ -204,20 +204,16 @@ fn main() -> eframe::Result<()> {
         diag::trace("main() entered");
     }
 
-    // Initialize macOS app delegate FIRST, before anything else
-    // This must happen very early to catch Apple Events for "Open With" functionality
+    // Register the macOS "Open With" handler before anything else. The event
+    // for the file the user clicked is delivered as soon as the run loop
+    // starts, so the handler has to already be in place; the paths it collects
+    // are drained per frame by `handle_instance_paths`.
     #[cfg(target_os = "macos")]
     platform::macos::init_app_delegate();
 
     // Parse CLI arguments first (before logging, so --help/--version work without config)
     let cli = Cli::parse();
-
-    // Combine CLI paths with any paths received via macOS Apple Events ("Open With")
-    let mut initial_paths = cli.paths;
-    let apple_event_paths = platform::get_open_file_paths();
-    if !apple_event_paths.is_empty() {
-        initial_paths.extend(apple_event_paths);
-    }
+    let initial_paths = cli.paths;
 
     // Single-instance check EARLY — before heavy initialization (config, icons, logging).
     // When the user double-clicks a file while Kotori Skrivr is already running, the secondary

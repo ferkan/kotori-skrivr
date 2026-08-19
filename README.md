@@ -152,17 +152,27 @@ associations or shadow the app in `/Applications`. Only `make install-macos`
 touches what's installed, so you choose when a new build becomes your real
 Skrivr.
 
-One caveat if you run `cargo bundle` by hand: the bundle it leaves in `target/`
-carries the same `se.kotori.skrivr` identifier as the installed copy, and
-macOS registers any `.app` it finds. `make install-macos` keeps a
-`target/.metadata_never_index` marker in place to hide it from Spotlight. If a
-dev bundle does get registered — opening it directly is enough — evict it by
-path:
+One caveat if you run `cargo bundle` by hand rather than through the target: it
+leaves two staging bundles, `target/release/bundle/osx` and
+`.../bundle/dmg`, and both carry the same `se.kotori.skrivr` identifier as the
+installed copy. macOS registers every `.app` it finds, so you end up with three
+bundles claiming one identifier — and LaunchServices then picks between them
+unpredictably, which surfaces as Finder refusing to open a `.md` file at all.
+`make install-macos` unregisters and deletes them for you. To clean up by hand:
 
 ```bash
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-  -u "$PWD/target/release/bundle/osx/Kotori Skrivr.app"
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$LSREGISTER" -u "$PWD/target/release/bundle/osx/Kotori Skrivr.app"
+"$LSREGISTER" -u "$PWD/target/release/bundle/dmg/Kotori Skrivr.app"
+rm -rf target/release/bundle
+"$LSREGISTER" -f -R -trusted "/Applications/Kotori Skrivr.app"
 ```
+
+Once installed, Finder's "Open With" and double-clicking an associated file
+both open that file in Skrivr — launching the app if it is not running, and
+adding a tab to the existing window if it is. Finder delivers those paths as an
+Apple Event rather than in `argv`, which the app handles in
+`src/platform/macos.rs`.
 
 ## Usage
 
