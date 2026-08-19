@@ -278,12 +278,22 @@ impl FerriteApp {
                     })
                     .collect();
 
-                // Custom wrapping tab bar
+                // Custom wrapping tab bar.
+                //
+                // The strip is a recessed shelf between two paper surfaces —
+                // the toolbar above and the document below both carry
+                // `base.background`. The active tab is cut from that same
+                // paper and runs to the shelf's bottom edge, so it reads as
+                // the page surfacing through the chrome rather than as a
+                // highlighted button sitting on it. Everything else here
+                // follows from that: no fill on inactive tabs, no rule
+                // crossing the active one, and the only strong colour in the
+                // strip is the text itself.
                 let available_width = ui.available_width();
-                let tab_height = 24.0;
-                let tab_spacing = 4.0;
+                let tab_height = 28.0;
+                let tab_spacing = 2.0;
                 let close_btn_width = 18.0;
-                let tab_padding = 16.0; // horizontal padding inside tab
+                let tab_padding = 20.0; // horizontal padding inside tab
                 let min_text_width = 60.0;
                 const MAX_TAB_WIDTH: f32 = 220.0;
 
@@ -335,7 +345,9 @@ impl FerriteApp {
                     current_row += 1;
                 }
                 let total_rows = current_row + 1;
-                let total_height = (total_rows as f32) * (tab_height + 2.0);
+                // No inter-row gap: the last row has to end exactly on the
+                // shelf's bottom edge for the active tab to meet the page.
+                let total_height = (total_rows as f32) * tab_height;
 
                 // Allocate space for all tab rows
                 let (tab_bar_rect, _) = ui.allocate_exact_size(
@@ -345,13 +357,35 @@ impl FerriteApp {
 
                 // Render tabs
                 let is_dark = ui.visuals().dark_mode;
-                let selected_bg = ui.visuals().selection.bg_fill;
-                let hover_bg = if is_dark {
-                    egui::Color32::from_rgb(60, 60, 70)
-                } else {
-                    egui::Color32::from_rgb(220, 220, 230)
+                // These were hardcoded — a cool grey (220,220,230) hover and
+                // the raw `selection.bg_fill` block — in an app whose palette
+                // is warm paper. Both are theme tokens now.
+                let colors = ThemeColors::from_theme(
+                    self.state.settings.theme,
+                    ui.visuals(),
+                    self.state.settings.ferrite_accent_rgb(),
+                );
+                let shelf_bg = colors.base.background_secondary;
+                let page_bg = colors.base.background;
+                let hover_bg = colors.base.hover;
+                let text_color = colors.text.primary;
+                let idle_text_color = colors.text.muted;
+                // Rounded at the top only. A tab rounded on all four corners
+                // is a floating chip; rounding just the shoulders is what
+                // makes it read as continuous with the surface below it.
+                let tab_corners = egui::CornerRadius {
+                    nw: 7,
+                    ne: 7,
+                    sw: 0,
+                    se: 0,
                 };
-                let text_color = ui.visuals().text_color();
+
+                ui.painter().rect_filled(tab_bar_rect, 0.0, shelf_bg);
+
+                // Filled in by whichever tab is active, so the strip's
+                // closing rule can be drawn around it once every tab is
+                // placed.
+                let mut active_tab_rect: Option<egui::Rect> = None;
 
                 for (idx, ((((tab_idx, title, selected, is_modified), (x_pos, row)), tab_width), text_width)) in tab_titles
                     .iter()
@@ -364,7 +398,7 @@ impl FerriteApp {
                     let text_width = *text_width;
 
                     let tab_rect = egui::Rect::from_min_size(
-                        tab_bar_rect.min + egui::vec2(*x_pos, (*row as f32) * (tab_height + 2.0)),
+                        tab_bar_rect.min + egui::vec2(*x_pos, (*row as f32) * tab_height),
                         egui::vec2(tab_width, tab_height)
                     );
 
@@ -428,17 +462,25 @@ impl FerriteApp {
 
                     // Draw tab background
                     if is_drop_target {
-                        // Show drop indicator
-                        let indicator_color = if is_dark {
-                            egui::Color32::from_rgb(80, 120, 200)
-                        } else {
-                            egui::Color32::from_rgb(100, 150, 230)
-                        };
-                        ui.painter().rect_filled(tab_rect, 4.0, indicator_color);
+                        // The drop indicator was a hardcoded blue in a warm
+                        // palette; the accent is the colour the rest of the
+                        // app already uses to mean "this one".
+                        ui.painter()
+                            .rect_filled(tab_rect, tab_corners, colors.ui.accent);
                     } else if *selected {
-                        ui.painter().rect_filled(tab_rect, 4.0, selected_bg);
+                        // Paper, plus a hairline over the shoulders to give
+                        // the card an edge against the shelf. The bottom is
+                        // deliberately left open — see the strip rule below.
+                        active_tab_rect = Some(tab_rect);
+                        ui.painter().rect_filled(tab_rect, tab_corners, page_bg);
+                        ui.painter().rect_stroke(
+                            tab_rect,
+                            tab_corners,
+                            egui::Stroke::new(1.0, colors.base.border_subtle),
+                            egui::StrokeKind::Inside,
+                        );
                     } else if tab_response.hovered() {
-                        ui.painter().rect_filled(tab_rect, 4.0, hover_bg);
+                        ui.painter().rect_filled(tab_rect, tab_corners, hover_bg);
                     }
 
                     // Draw tab title - use available width minus close button and padding
@@ -447,10 +489,20 @@ impl FerriteApp {
                         tab_rect.min + egui::vec2(8.0, 4.0),
                         egui::vec2(title_available_width, tab_height - 8.0)
                     );
+                    // Weight, not a coloured block, is what marks the active
+                    // tab now that its fill matches the page. `.strong()` does
+                    // nothing to weight in egui — bold means naming the bold
+                    // family, which is what `chrome_bold_font` is for.
+                    let title_color = if *selected { text_color } else { idle_text_color };
+                    let title_font = if *selected {
+                        crate::fonts::chrome_bold_font(egui::FontId::default().size)
+                    } else {
+                        egui::FontId::default()
+                    };
                     let mut job = egui::text::LayoutJob::simple_singleline(
                         title.clone(),
-                        egui::FontId::default(),
-                        text_color
+                        title_font,
+                        title_color
                     );
                     job.wrap.max_width = title_available_width;
                     job.wrap.max_rows = 1;
@@ -461,7 +513,7 @@ impl FerriteApp {
                         title_rect.center().y - galley.size().y / 2.0
                     );
                     let truncated = galley.size().x < text_width - 0.5;
-                    ui.painter().galley(text_pos, galley, text_color);
+                    ui.painter().galley(text_pos, galley, title_color);
                     if truncated {
                         tab_response = tab_response.on_hover_text(title.clone());
                     }
@@ -487,12 +539,12 @@ impl FerriteApp {
                     if *is_modified && !tab_response.hovered() && !close_response.hovered() {
                         // Unsaved changes: a filled dot occupies the close slot
                         // until the tab is hovered, then it yields to the close X.
-                        ui.painter().circle_filled(close_rect.center(), 3.5, text_color);
+                        ui.painter().circle_filled(close_rect.center(), 3.5, title_color);
                     } else {
                         let close_color = if close_response.hovered() {
-                            egui::Color32::from_rgb(220, 80, 80)
+                            colors.ui.error
                         } else {
-                            text_color
+                            title_color
                         };
                         ui.painter().text(
                             close_rect.center(),
@@ -518,6 +570,48 @@ impl FerriteApp {
                     }
                 }
 
+                // Close the shelf with a hairline — but break it across the
+                // active tab. An unbroken rule turns every tab into a chip
+                // sitting on a ledge; stopping at the active tab's shoulders
+                // and picking up on the far side is what makes that one tab
+                // read as continuous with the document beneath it. This is
+                // the whole trick, and it costs two line segments.
+                let rule_y = tab_bar_rect.bottom() - 0.5;
+                let rule = egui::Stroke::new(1.0, colors.base.border_subtle);
+                // Only a tab on the final row touches the rule; one on an
+                // earlier row of a wrapped strip has tabs below it and must
+                // not punch a hole in the line.
+                let gap = active_tab_rect
+                    .filter(|r| r.bottom() >= tab_bar_rect.bottom() - 0.5)
+                    .map(|r| (r.left(), r.right()));
+                match gap {
+                    Some((gap_left, gap_right)) => {
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(tab_bar_rect.left(), rule_y),
+                                egui::pos2(gap_left, rule_y),
+                            ],
+                            rule,
+                        );
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(gap_right, rule_y),
+                                egui::pos2(tab_bar_rect.right(), rule_y),
+                            ],
+                            rule,
+                        );
+                    }
+                    None => {
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(tab_bar_rect.left(), rule_y),
+                                egui::pos2(tab_bar_rect.right(), rule_y),
+                            ],
+                            rule,
+                        );
+                    }
+                }
+
                 // Draw + button - use pre-calculated tab widths for consistency
                 let plus_x = if tab_positions.is_empty() || tab_widths.is_empty() {
                     0.0
@@ -540,7 +634,7 @@ impl FerriteApp {
                 };
 
                 let plus_rect = egui::Rect::from_min_size(
-                    tab_bar_rect.min + egui::vec2(plus_x, (plus_row as f32) * (tab_height + 2.0)),
+                    tab_bar_rect.min + egui::vec2(plus_x, (plus_row as f32) * tab_height),
                     egui::vec2(plus_btn_width, tab_height)
                 );
                 let plus_response = ui.interact(
@@ -557,7 +651,7 @@ impl FerriteApp {
                 crate::ui::a11y::focus_ring(ui, &plus_response, 4);
 
                 if plus_response.hovered() {
-                    ui.painter().rect_filled(plus_rect, 4.0, hover_bg);
+                    ui.painter().rect_filled(plus_rect, tab_corners, hover_bg);
                     ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                 }
                 ui.painter().text(

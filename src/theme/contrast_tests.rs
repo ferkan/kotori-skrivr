@@ -182,3 +182,48 @@ fn disabled_view_segment_text_meets_contrast_floor() {
         },
     ]);
 }
+
+/// The quiet toolbar rests its glyphs at `text.muted` on the bar's own
+/// background (`base.background` — the bar carries the page's colour, not a
+/// panel tone) and only lifts them to `text.primary` under the pointer.
+///
+/// That resting state is the one that has to hold up: an icon-only control is
+/// a meaningful UI component, so the floor is 3:1, and a control that is
+/// legible only once you hover it is not legible. Recorded here because the
+/// whole point of the quiet direction is to push these glyphs *down* in
+/// contrast — this is the line past which "recessive" becomes "unreadable".
+#[test]
+fn toolbar_resting_glyph_meets_contrast_floor() {
+    let light = ThemeColors::light();
+    let dark = ThemeColors::dark();
+
+    assert_contrast_floors(&[
+        ContrastCase {
+            label: "light toolbar resting glyph".to_string(),
+            fg: light.text.muted,
+            bg: light.base.background,
+            floor: 3.0,
+        },
+        ContrastCase {
+            label: "dark toolbar resting glyph".to_string(),
+            fg: dark.text.muted,
+            bg: dark.base.background,
+            floor: 3.0,
+        },
+        // The inactive tab title uses the same token against the shelf, which
+        // is a step off the page colour — a pairing the case above does not
+        // cover.
+        ContrastCase {
+            label: "light inactive tab title".to_string(),
+            fg: light.text.muted,
+            bg: light.base.background_secondary,
+            floor: 4.5,
+        },
+        ContrastCase {
+            label: "dark inactive tab title".to_string(),
+            fg: dark.text.muted,
+            bg: dark.base.background_secondary,
+            floor: 4.5,
+        },
+    ]);
+}

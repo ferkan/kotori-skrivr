@@ -46,6 +46,7 @@ view_mode:
 # Bottom markdown format toolbar (Raw / Split raw pane)
 format_toolbar:
   show_side_panel: "Show side panel"
+  heading_menu_tooltip: "Heading level"
   mermaid_menu: "Mermaid…"
   mermaid_entry_tooltip: "Insert a Mermaid diagram at the cursor"
   mermaid_flowchart: "Flowchart"
