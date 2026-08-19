@@ -127,6 +127,43 @@ Upstream Ferrite *does* ship signed Windows installers and packages for Linux an
 
 See [docs/building.md](docs/building.md) for platform-specific build dependencies.
 
+### Installing as a macOS app
+
+`cargo build --release` produces a bare Unix executable. macOS needs an `.app`
+bundle before the editor gets its icon, its Dock identity, and the Markdown /
+JSON / YAML / TOML file associations declared in
+`assets/macos/info_plist_ext.xml`. Building and installing that bundle is one
+target:
+
+```bash
+make install-macos
+```
+
+It quits a running copy, runs `cargo bundle --release`, replaces
+`/Applications/Kotori Skrivr.app`, and prints the version it installed. The old
+bundle is removed rather than copied over, so files dropped between versions
+don't linger as stale resources. Requires [`cargo-bundle`](https://crates.io/crates/cargo-bundle)
+(`cargo install cargo-bundle`).
+
+Everything else leaves your installed copy alone. `cargo run --release` and
+`./target/release/skrivr` run the bare binary, which has no bundle identifier
+and is never registered with macOS — it cannot take over your file
+associations or shadow the app in `/Applications`. Only `make install-macos`
+touches what's installed, so you choose when a new build becomes your real
+Skrivr.
+
+One caveat if you run `cargo bundle` by hand: the bundle it leaves in `target/`
+carries the same `se.kotori.skrivr` identifier as the installed copy, and
+macOS registers any `.app` it finds. `make install-macos` keeps a
+`target/.metadata_never_index` marker in place to hide it from Spotlight. If a
+dev bundle does get registered — opening it directly is enough — evict it by
+path:
+
+```bash
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -u "$PWD/target/release/bundle/osx/Kotori Skrivr.app"
+```
+
 ## Usage
 
 ```bash
